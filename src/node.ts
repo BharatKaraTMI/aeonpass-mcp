@@ -12,7 +12,8 @@ import { createApp } from "./app.js";
 const PORT = parseInt(process.env.PORT ?? "47821", 10);
 const fallbackApiKey = process.env.AEONPASS_API_KEY;
 
-const app = createApp({ fallbackApiKey });
+// A long-lived process, so a SignalR subscription survives between tool calls.
+const app = createApp({ fallbackApiKey, realtime: true });
 
 serve({ fetch: app.fetch, port: PORT }, (info) => {
   console.log(`Aeon Pass MCP listening on http://localhost:${info.port}`);
@@ -23,4 +24,5 @@ serve({ fetch: app.fetch, port: PORT }, (info) => {
       ? "  Auth: falling back to AEONPASS_API_KEY (local mode)"
       : "  Auth: X-API-KEY header required on every request (pass-through mode)"
   );
+  console.log("  Realtime: chat SignalR tools enabled");
 });

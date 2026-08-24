@@ -1,13 +1,36 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AeonPassClient } from "./api.js";
+import {
+  connectRealtime,
+  disconnectRealtime,
+  pollRealtime,
+  realtimeStatus,
+} from "./realtime.js";
+
+export interface ServerOptions {
+  /**
+   * Enables the realtime chat tools, bound to this key.
+   *
+   * The key is passed separately rather than read back off the client because
+   * a SignalR subscription is the one thing here that outlives the tool call
+   * that opened it, and it needs the raw key for the handshake. Set it only on
+   * a host that keeps a process alive between calls — stdio, or a long-running
+   * `npm run serve`. On serverless the instance can be frozen or discarded
+   * between requests, so a subscription opened in one invocation is not there
+   * for the next, and the tools would only ever report a dead connection.
+   */
+  realtimeApiKey?: string;
+}
 
 /**
  * Registers all Aeon Pass tools against a client. The client carries the API
  * key, so each transport decides where that key comes from — env for stdio,
  * request header for HTTP.
  */
-export function createServer(client: AeonPassClient): McpServer {
+export function createServer(client: AeonPassClient, options: ServerOptions = {}): McpServer {
+  const { realtimeApiKey } = options;
+
   const server = new McpServer({
     name: "aeonpass",
     version: "1.0.0",
@@ -472,6 +495,159 @@ export function createServer(client: AeonPassClient): McpServer {
     })
   );
 
+
+  // ── Chat: conversations ──
+  //
+  // The Message API. A conversation is one Org↔Contact thread; messages carry
+  // optional attachments and an optional event tag.
+
+  server.tool(
+    "list_conversations",
+    "List the organization's chat conversations, newest activity first. Returns { data: [...], pagination: { totalCount, page, pageSize, totalPages } }. Each conversation carries its contact, lastMessage, unreadCount, and isReadByUser.",
+    {
+      pageNo: z.number().optional().describe("Page number (1-based, default 1)"),
+      pageSize: z.number().optional().describe("Results per page (default 100)"),
+      searchTerm: z
+        .string()
+        .optional()
+        .describe("Matches either side: contact name/email/phone, or the organization's"),
+      isUnreadOnly: z.boolean().optional().describe("Only conversations with a non-zero unread count"),
+    },
+    async (params) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.listConversations(params), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "get_conversation",
+    "Get one conversation by ID, including its participants, last message, and current unread count. Must belong to your organization.",
+    { id: z.string().describe("Conversation GUID") },
+    async ({ id }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.getConversation(id), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "get_conversation_with_contact",
+    "Get the conversation with a specific contact, optionally creating it if none exists yet (get-or-create). Prefer this over create_conversation when you just want the thread.",
+    {
+      contactId: z.string().describe("Contact GUID — must be a contact of your organization"),
+      isCreateNew: z
+        .boolean()
+        .describe("Create the conversation if it does not exist yet. Required — there is no default."),
+    },
+    async ({ contactId, isCreateNew }) => ({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(await client.getConversationWithContact(contactId, isCreateNew), null, 2),
+        },
+      ],
+    })
+  );
+
+  server.tool(
+    "create_conversation",
+    "Start a new conversation with a contact. If a thread with that contact may already exist, use get_conversation_with_contact instead.",
+    { contactId: z.string().describe("Contact GUID — must be a contact of your organization") },
+    async ({ contactId }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.createConversation(contactId), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "list_messages",
+    "List a conversation's messages, paginated. Branch on each message's isFromOrganization to tell which side sent it. Returns { data: [...], pagination: {...} }.",
+    {
+      conversationId: z.string().describe("Conversation GUID"),
+      eventId: z
+        .string()
+        .optional()
+        .describe("Only messages tagged to this event. Untagged messages, inbound SMS included, are excluded."),
+      pageNo: z.number().optional().describe("Page number (1-based, default 1)"),
+      pageSize: z.number().optional().describe("Messages per page (default 100)"),
+      searchTerm: z.string().optional().describe("Case-insensitive substring match on the message body"),
+    },
+    async ({ conversationId, ...params }) => ({
+      content: [
+        { type: "text", text: JSON.stringify(await client.listMessages(conversationId, params), null, 2) },
+      ],
+    })
+  );
+
+  server.tool(
+    "send_chat_message",
+    "Send a message into a conversation. By default it is attributed to the organization and delivered on whichever of inApp/inSMS/inEmail you enable. Set sendFrom='Contact' (with contactId) to record a message as coming from the contact, the way an inbound SMS reply is stored — that dispatches nothing to them, since the channel flags describe how to reach the contact.",
+    {
+      conversationId: z.string().describe("Conversation GUID — must belong to your organization"),
+      messageBody: z.string().optional().describe("Message text. Omit to send attachments only."),
+      sendFrom: z
+        .enum(["Organization", "Contact"])
+        .optional()
+        .describe("Which side the message is from. Defaults to Organization."),
+      contactId: z
+        .string()
+        .optional()
+        .describe("Required when sendFrom='Contact'. Must be this conversation's own contact."),
+      eventId: z.string().optional().describe("Tag the message to one of your organization's events"),
+      attachments: z
+        .array(
+          z.object({
+            id: z.string().describe("Attachment id from upload_message_attachments"),
+            url: z.string().describe("Public URL from upload_message_attachments"),
+            fileName: z.string().optional(),
+            fileType: z.string().optional(),
+            storageFileName: z.string().optional(),
+          })
+        )
+        .optional()
+        .describe("Files to attach, using the records returned by upload_message_attachments"),
+      inApp: z.boolean().optional().describe("Deliver as an in-app push. Only reaches contacts with a user account."),
+      inSMS: z.boolean().optional().describe("Deliver by SMS. This is the channel the contact replies on."),
+      inEmail: z.boolean().optional().describe("Deliver by email"),
+    },
+    async (params) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.sendChatMessage(params), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "mark_conversation_read",
+    "Mark a conversation read up to now, clearing its unread count. Always records the ORGANIZATION as the reader — there is no contact-side mark-read on this surface. Returns the recorded readDate.",
+    { id: z.string().describe("Conversation GUID") },
+    async ({ id }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.markConversationRead(id), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "get_contact_by_guest",
+    "Resolve an event guest ID to the contact record behind it. Use this to get the contactId needed to open a conversation with an event's guest.",
+    { guestId: z.string().describe("Guest GUID — must be a guest of one of your organization's events") },
+    async ({ guestId }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.getContactByGuest(guestId), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "upload_message_attachments",
+    "Upload files for use as chat attachments, then pass the returned records to send_chat_message. Files are base64-encoded in the request, so this is practical for small files only — the encoded bytes have to pass through the conversation.",
+    {
+      files: z
+        .array(
+          z.object({
+            fileName: z.string().describe("Original file name, e.g. ticket.png"),
+            fileType: z.string().optional().describe("MIME type, e.g. image/png"),
+            contentBase64: z.string().describe("Base64-encoded file content"),
+          })
+        )
+        .describe("Files to upload — at least one"),
+    },
+    async (params) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.uploadMessageDocs(params), null, 2) }],
+    })
+  );
+
   server.tool(
     "list_guest_groups",
     "Get all guest groups available for an organization (org-specific + system defaults). Use the returned IDs when creating or updating guests.",
@@ -480,6 +656,90 @@ export function createServer(client: AeonPassClient): McpServer {
       content: [{ type: "text", text: JSON.stringify(await client.listGuestGroups(organizationId), null, 2) }],
     })
   );
+
+
+  // ── Chat: realtime (SignalR) ──
+  //
+  // Registered only when the host keeps a process alive between tool calls —
+  // see ServerOptions.realtimeApiKey. The hub is receive-only, so there is no
+  // "send over the socket" tool: sending is send_chat_message, and marking read
+  // is mark_conversation_read.
+
+  if (realtimeApiKey) {
+    const apiKey = realtimeApiKey;
+
+    server.tool(
+      "chat_realtime_connect",
+      "Open a live SignalR subscription to the chat hub and start buffering pushed events, which you then read with chat_realtime_poll. Omit contactId to watch every conversation in your organization; pass one to watch that single thread instead — the contact scope REPLACES the organization scope rather than adding to it, so watching both at once means calling this twice. Calling it again for a scope already open just returns that subscription.",
+      {
+        contactId: z
+          .string()
+          .optional()
+          .describe(
+            "Narrow to one contact's thread. Must be a contact of your organization — an unknown one fails the handshake with 401, it does not fall back to the org-wide scope."
+          ),
+        bufferSize: z
+          .number()
+          .optional()
+          .describe("Events to hold before evicting the oldest (default 200, max 2000)"),
+      },
+      async ({ contactId, bufferSize }) => ({
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(await connectRealtime(apiKey, { contactId, bufferSize }), null, 2),
+          },
+        ],
+      })
+    );
+
+    server.tool(
+      "chat_realtime_poll",
+      "Read chat events buffered since your last poll. Two event types arrive: ReceiveMessage (a message was sent — branch on lastMessage.isFromOrganization for which side, and note your OWN sends echo back here, so reconcile on lastMessage.id) and MarkMessagesRead (a read receipt — branch on readByContact for the direction). The cursor advances by itself, so repeated bare calls return only what is new. If status.reconnects is non-zero or status.dropped is above 0, events were missed: re-read with list_messages rather than trusting the buffer.",
+      {
+        contactId: z
+          .string()
+          .optional()
+          .describe("Which subscription to read. Omit for the organization-wide one."),
+        sinceSeq: z
+          .number()
+          .optional()
+          .describe("Re-read from this seq instead of the auto-advancing cursor, as far back as the buffer still holds"),
+        limit: z.number().optional().describe("Maximum events to return (default 50, max 500)"),
+      },
+      async ({ contactId, sinceSeq, limit }) => ({
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(await pollRealtime(apiKey, { contactId, sinceSeq, limit }), null, 2),
+          },
+        ],
+      })
+    );
+
+    server.tool(
+      "chat_realtime_status",
+      "List your open realtime subscriptions with their connection state, buffered/received/dropped counts, and reconnect count. Returns an empty list when nothing is subscribed.",
+      {},
+      async () => ({
+        content: [{ type: "text", text: JSON.stringify(await realtimeStatus(apiKey), null, 2) }],
+      })
+    );
+
+    server.tool(
+      "chat_realtime_disconnect",
+      "Close a realtime subscription and discard its buffered events. Closes the organization-wide one by default.",
+      {
+        contactId: z.string().optional().describe("Close this contact-scoped subscription instead"),
+        all: z.boolean().optional().describe("Close every subscription this key holds"),
+      },
+      async ({ contactId, all }) => ({
+        content: [
+          { type: "text", text: JSON.stringify(await disconnectRealtime(apiKey, { contactId, all }), null, 2) },
+        ],
+      })
+    );
+  }
 
   return server;
 }

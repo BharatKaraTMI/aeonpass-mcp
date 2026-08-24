@@ -163,6 +163,69 @@ Two things cost real debugging time; both are load-bearing:
 > real people over SMS and email, and `sendToAll` is not scoped. Treat them as
 > destructive.
 
+### Chat
+
+Two-way conversations between your organization and its contacts.
+
+| Tool | Description |
+|------|-------------|
+| `list_conversations` | List conversations (paginated, unread-only filter) |
+| `get_conversation` | Get one conversation by ID |
+| `get_conversation_with_contact` | Get-or-create the thread with a contact |
+| `create_conversation` | Start a conversation with a contact |
+| `list_messages` | List a conversation's messages (paginated, event filter) |
+| `send_chat_message` | Send into a conversation |
+| `mark_conversation_read` | Clear the unread count |
+| `get_contact_by_guest` | Resolve an event guest ID to its contact |
+| `upload_message_attachments` | Upload files to attach to a message |
+
+> `send_chat_message` reaches real people whenever `inApp`, `inSMS`, or
+> `inEmail` is set. Treat it as destructive.
+
+Two things worth knowing. `send_chat_message` takes `sendFrom: "Contact"`, which
+records a message as coming from the contact the way an inbound SMS reply is
+stored — that dispatches **nothing** to them, since the channel flags describe
+how to *reach* a contact. And `mark_conversation_read` always records the
+organization as the reader; there is no contact-side mark-read on this surface.
+
+### Chat realtime (SignalR)
+
+| Tool | Description |
+|------|-------------|
+| `chat_realtime_connect` | Open a subscription and start buffering events |
+| `chat_realtime_poll` | Read events since your last poll |
+| `chat_realtime_status` | Connection state and event counters |
+| `chat_realtime_disconnect` | Close a subscription |
+
+**These only appear on stdio and `npm run serve`, not on the hosted server.** A
+subscription has to outlive the tool call that opened it, and serverless
+instances are frozen or discarded between requests — so rather than have the
+tools report a dead connection, they aren't registered there.
+
+The hub is receive-only, so the flow is: connect once, then poll. Sending is
+still `send_chat_message`.
+
+```
+"Watch our conversations for new messages"     → chat_realtime_connect
+"Anything new?"                                → chat_realtime_poll
+```
+
+`chat_realtime_connect` takes an optional `contactId`. Without it you get every
+conversation in the organization; with it you get that one thread and nothing
+else — the contact scope *replaces* the org scope rather than adding to it, so
+watching both means connecting twice. A `contactId` that isn't one of yours
+fails the handshake with a 401 rather than quietly falling back to the org-wide
+view.
+
+Your own sends echo back on the connection that made them, so reconcile on
+`lastMessage.id` rather than assuming an event is inbound. And SignalR replays
+nothing across a reconnect: if `status.reconnects` or `status.dropped` is above
+zero, events were missed and `list_messages` is the way to catch up.
+
+The API key travels as an `X-API-KEY` handshake header, not in the URL. The hub
+does accept `?apikey=`, uniquely in this API, but that form carries the key into
+the Azure SignalR Service redirect URL; the header form doesn't.
+
 ### Techaeon Status Codes
 
 | Code | Description |
@@ -182,6 +245,9 @@ Once installed, ask Claude things like:
 - "Update the redirect URL for techaeon `{id}` to `https://example.com`"
 - "Create a new group called 'VIP Guests' with 50 techaeons"
 - "Search for techaeons assigned to john@example.com"
+- "Show me unread conversations"
+- "Reply to the conversation with {contact} saying their pass is ready"
+- "Watch for new messages, then tell me what comes in"
 
 ## Development
 
@@ -205,7 +271,7 @@ claude mcp add --scope project aeonpass-dev -- node "$(pwd)/dist/index.js"
 
 That needs `AEONPASS_API_KEY` in your environment, since stdio reads the key
 from there. Remove it when you're done — running it alongside the hosted
-`aeonpass` server means two copies of all 25 tools, which measurably degrades
+`aeonpass` server means two copies of every tool, which measurably degrades
 tool selection.
 
 ```bash
@@ -227,7 +293,7 @@ npm run check:api             # what moved since the last snapshot
 npm run check:api -- --write  # refresh specs/*.json once handled
 ```
 
-`info.version` is `1.0.0` on all three Aeon Pass specs and has **not moved**
+`info.version` is `1.0.0` on all four Aeon Pass specs and has **not moved**
 through a full path restructure (`/api/techaeon/public` → `/api/portal/techaeon`),
 a change to every list response shape, and the addition of `PATCH /guest/{id}`.
 So the version field can't tell you anything. Instead, `specs/*.json` holds a
@@ -254,7 +320,8 @@ key is a parameter rather than a module-level env read, so each entrypoint
 decides where it comes from:
 
 ```
-src/api.ts     createClient(apiKey) → the 25 API calls, bound to that key
+src/api.ts     createClient(apiKey) → the 34 API calls, bound to that key
+src/realtime.ts SignalR chat subscriptions, keyed by sha256(apiKey) + scope
 src/server.ts  createServer(client) → registers the tools
 src/app.ts     Hono app; reads X-API-KEY per request
 src/index.ts   stdio      → key from AEONPASS_API_KEY

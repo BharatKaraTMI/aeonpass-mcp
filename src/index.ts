@@ -12,8 +12,9 @@ async function main() {
     throw new Error("AEONPASS_API_KEY environment variable is not set");
   }
 
+  // stdio is a long-lived process, so the realtime chat tools work here.
   const transport = new StdioServerTransport();
-  await createServer(createClient(apiKey)).connect(transport);
+  await createServer(createClient(apiKey), { realtimeApiKey: apiKey }).connect(transport);
 }
 
 main().catch((err) => {

@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SPEC_DIR = join(ROOT, "specs");
 const BASE = "https://aeonpass-dev-portal.vercel.app/api/specs";
-const SPECS = ["techaeon", "event", "organization"];
+const SPECS = ["techaeon", "event", "organization", "message"];
 
 /** operation -> the createClient method that implements it. */
 const COVERED = {
@@ -51,6 +51,19 @@ const COVERED = {
   "POST /api/portal/contact/send-message": "sendMessageToContacts",
   "POST /api/portal/contact/upload-list": "uploadContacts",
   "GET /api/portal/guest-group/{organizationId}/list": "listGuestGroups",
+
+  "POST /api/portal/conversations": "createConversation",
+  "GET /api/portal/conversations/{id}": "getConversation",
+  "GET /api/portal/conversations/with-contact/{contactId}": "getConversationWithContact",
+  "GET /api/portal/conversations/list": "listConversations",
+  "GET /api/portal/conversations/{conversationId}/messages": "listMessages",
+  "POST /api/portal/conversations/send-message": "sendChatMessage",
+  "PUT /api/portal/conversations/{id}/mark-read": "markConversationRead",
+  "GET /api/portal/conversations/contact/{guestId}": "getContactByGuest",
+  "POST /api/portal/conversations/upload-docs": "uploadMessageDocs",
+  // Not a REST call: the spec documents the SignalR hub as a GET so it shows up
+  // in the reference. Implemented in realtime.ts, not createClient.
+  "GET /api/portal/chat": "connectRealtime (src/realtime.ts)",
 };
 
 /** Endpoints we've decided not to expose, and why. */

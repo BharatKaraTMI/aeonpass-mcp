@@ -18,6 +18,18 @@ export interface AppOptions {
    * of its own.
    */
   fallbackApiKey?: string;
+
+  /**
+   * Register the realtime chat tools, which hold a SignalR subscription open
+   * across tool calls.
+   *
+   * Off by default because the default HTTP target is serverless: on Vercel the
+   * instance can be frozen or discarded between requests, so a subscription
+   * opened by one call is simply gone by the next and the tools would advertise
+   * a capability the host cannot keep. `npm run serve` is a long-lived process
+   * and turns this on.
+   */
+  realtime?: boolean;
 }
 
 export function createApp(options: AppOptions = {}) {
@@ -42,7 +54,9 @@ export function createApp(options: AppOptions = {}) {
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
     });
-    await createServer(createClient(apiKey)).connect(transport);
+    await createServer(createClient(apiKey), {
+      realtimeApiKey: options.realtime ? apiKey : undefined,
+    }).connect(transport);
     return transport.handleRequest(c.req.raw);
   };
 

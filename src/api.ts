@@ -1,4 +1,5 @@
-const BASE_URL = "https://apv2-gatewayapp-prod-westus3.azurewebsites.net";
+/** Also the SignalR hub host — see realtime.ts. */
+export const BASE_URL = "https://apv2-gatewayapp-prod-westus3.azurewebsites.net";
 
 /** One API call, recorded without credentials or personal data. */
 export interface CallLog {
@@ -77,6 +78,34 @@ function callMeta(method: string, args: unknown[]): Record<string, unknown> | un
     case "listContacts":
     case "listGuestGroups":
       return { organizationId: a };
+    // Chat. Conversation and contact ids are the routing facts worth keeping;
+    // the message body, its attachments and the contact's details are not.
+    case "sendChatMessage":
+      return {
+        conversationId: a?.conversationId,
+        sendFrom: a?.sendFrom ?? "Organization",
+        contactId: a?.contactId,
+        eventId: a?.eventId,
+        channels: { inApp: !!a?.inApp, inSMS: !!a?.inSMS, inEmail: !!a?.inEmail },
+        bodyChars: a?.messageBody?.length ?? 0,
+        attachments: a?.attachments?.length ?? 0,
+      };
+    case "uploadMessageDocs":
+      // Count and types only — never a file name, which is often descriptive.
+      return {
+        files: a?.files?.length ?? 0,
+        types: a?.files?.map((f: any) => f?.fileType ?? "unknown"),
+      };
+    case "createConversation":
+      return { contactId: a };
+    case "getConversationWithContact":
+      return { contactId: a, isCreateNew: !!b };
+    case "markConversationRead":
+      return { conversationId: a };
+    case "getContactByGuest":
+      return { guestId: a };
+    case "listMessages":
+      return { conversationId: a, eventId: b?.eventId };
     default:
       return undefined;
   }
@@ -168,6 +197,24 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
       method,
       headers: { "X-API-KEY": apiKey },
       body: formData,
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`API ${res.status}: ${text}`);
+    if (!text) return { success: true };
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text;
+    }
+  }
+
+  // Files, rather than the scalar fields formRequest builds — the caller has
+  // already assembled the FormData because only it knows the part names.
+  async function multipartRequest(method: string, path: string, form: FormData): Promise<unknown> {
+    const res = await fetch(new URL(path, BASE_URL).toString(), {
+      method,
+      headers: { "X-API-KEY": apiKey },
+      body: form,
     });
     const text = await res.text();
     if (!res.ok) throw new Error(`API ${res.status}: ${text}`);
@@ -501,6 +548,123 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
       }>;
     }) {
       return request("POST", "/api/portal/contact/upload-list", params);
+    },
+
+
+    // ── Chat: conversations ──
+    //
+    // The Message API's `/api/portal/conversations/*` surface. Its list results
+    // use the same `{ data, pagination }` shape as the rest of the portal.
+
+    createConversation(contactId: string) {
+      return request("POST", "/api/portal/conversations", { contactId });
+    },
+
+    getConversation(id: string) {
+      return request("GET", `/api/portal/conversations/${id}`);
+    },
+
+    /**
+     * Get-or-create the thread with one contact. `isCreateNew` is a required
+     * query parameter, not an optional flag — the API has no default for it.
+     */
+    getConversationWithContact(contactId: string, isCreateNew: boolean) {
+      return request("GET", `/api/portal/conversations/with-contact/${contactId}`, undefined, {
+        isCreateNew: String(isCreateNew),
+      });
+    },
+
+    listConversations(params: {
+      pageNo?: number;
+      pageSize?: number;
+      searchTerm?: string;
+      isUnreadOnly?: boolean;
+    }) {
+      const query: Record<string, string | undefined> = {};
+      if (params.pageNo) query.pageNo = String(params.pageNo);
+      if (params.pageSize) query.pageSize = String(params.pageSize);
+      if (params.searchTerm) query.searchTerm = params.searchTerm;
+      if (params.isUnreadOnly !== undefined) query.isUnreadOnly = String(params.isUnreadOnly);
+      return request("GET", "/api/portal/conversations/list", undefined, query);
+    },
+
+    listMessages(
+      conversationId: string,
+      params: {
+        eventId?: string;
+        pageNo?: number;
+        pageSize?: number;
+        searchTerm?: string;
+      }
+    ) {
+      const query: Record<string, string | undefined> = {};
+      if (params.eventId) query.eventId = params.eventId;
+      if (params.pageNo) query.pageNo = String(params.pageNo);
+      if (params.pageSize) query.pageSize = String(params.pageSize);
+      if (params.searchTerm) query.searchTerm = params.searchTerm;
+      return request("GET", `/api/portal/conversations/${conversationId}/messages`, undefined, query);
+    },
+
+    /**
+     * `sendFrom: "Contact"` attributes the message to the contact, the way an
+     * inbound SMS reply is stored, and dispatches nothing — inApp/inSMS/inEmail
+     * describe how to *reach* the contact, so they only mean something when
+     * sending as the organization.
+     */
+    sendChatMessage(params: {
+      conversationId: string;
+      sendFrom?: "Organization" | "Contact";
+      contactId?: string;
+      eventId?: string;
+      messageBody?: string;
+      attachments?: Array<{
+        id: string;
+        url: string;
+        fileName?: string;
+        fileType?: string;
+        storageFileName?: string;
+      }>;
+      inApp?: boolean;
+      inSMS?: boolean;
+      inEmail?: boolean;
+    }) {
+      return request("POST", "/api/portal/conversations/send-message", params);
+    },
+
+    /**
+     * Always records the *organization* as the reader, whichever way a realtime
+     * connection is scoped — there is no contact-side mark-read on this surface.
+     * Takes no fields but still needs a JSON body, or the API answers 415;
+     * `request` sends `{}` for a PUT, which satisfies that.
+     */
+    markConversationRead(id: string) {
+      return request("PUT", `/api/portal/conversations/${id}/mark-read`);
+    },
+
+    getContactByGuest(guestId: string) {
+      return request("GET", `/api/portal/conversations/contact/${guestId}`);
+    },
+
+    /**
+     * Upload attachments, then pass the returned records to `sendChatMessage`.
+     *
+     * Files arrive base64-encoded rather than as paths: the client has to run
+     * unchanged on Workers and Deno, where there is no local filesystem to read
+     * from, and over HTTP the caller is not on the same machine as the server
+     * anyway. Practical for small files only — an LLM has to carry the encoded
+     * bytes through its context to call this.
+     */
+    uploadMessageDocs(params: {
+      files: Array<{ fileName: string; fileType?: string; contentBase64: string }>;
+    }) {
+      const form = new FormData();
+      for (const f of params.files) {
+        // atob/Uint8Array rather than node:crypto-style Buffer, for the same
+        // portability reason the caller hash uses Web Crypto.
+        const bytes = Uint8Array.from(atob(f.contentBase64), (ch) => ch.charCodeAt(0));
+        form.append("File", new Blob([bytes], { type: f.fileType || "application/octet-stream" }), f.fileName);
+      }
+      return multipartRequest("POST", "/api/portal/conversations/upload-docs", form);
     },
 
     listGuestGroups(organizationId: string) {

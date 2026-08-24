@@ -6,6 +6,8 @@
 // When deploying, leave AEONPASS_API_KEY unset: callers then have to send their
 // own key as X-API-KEY and this process holds no credential.
 
+// First import: populates process.env from .env before anything reads it.
+import "./env.js";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
 

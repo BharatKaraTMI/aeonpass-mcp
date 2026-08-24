@@ -358,9 +358,8 @@ export function createServer(client: AeonPassClient): McpServer {
 
   server.tool(
     "list_contacts",
-    "List contacts for an organization with pagination and search. Returns { data: [...], pagination }.",
+    "List the organization's contacts with pagination and search. Scoped to the API key's organization — there is no organization parameter. Returns { data: [...], pagination }.",
     {
-      organizationId: z.string().describe("Organization GUID"),
       pageNo: z.number().optional(),
       pageSize: z.number().optional(),
       searchTerm: z.string().optional(),
@@ -368,8 +367,8 @@ export function createServer(client: AeonPassClient): McpServer {
       sortDirection: z.enum(["asc", "desc"]).optional(),
       includeAll: z.boolean().optional().describe("Include all contacts (default true)"),
     },
-    async ({ organizationId, ...params }) => ({
-      content: [{ type: "text", text: JSON.stringify(await client.listContacts(organizationId, params), null, 2) }],
+    async (params) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.listContacts(params), null, 2) }],
     })
   );
 
@@ -441,7 +440,6 @@ export function createServer(client: AeonPassClient): McpServer {
     "send_message_to_contacts",
     "Send a message to specific contacts via InApp (1), SMS (2), and/or Email (3).",
     {
-      organizationId: z.string().describe("Organization GUID"),
       messageBody: z.string().describe("Message text"),
       contactIds: z.array(z.string()).describe("Contact GUIDs to message"),
       typeIds: z.array(z.number()).optional().describe("Channel IDs: 1=InApp, 2=SMS, 3=Email"),
@@ -455,7 +453,6 @@ export function createServer(client: AeonPassClient): McpServer {
     "upload_contacts",
     "Bulk create or update contacts from a list. Matches existing contacts by phone/email and upserts. Returns counts of new/updated/error records.",
     {
-      organizationId: z.string().describe("Organization GUID"),
       contacts: z.array(
         z.object({
           firstName: z.string(),
@@ -474,10 +471,253 @@ export function createServer(client: AeonPassClient): McpServer {
 
   server.tool(
     "list_guest_groups",
-    "Get all guest groups available for an organization (org-specific + system defaults). Use the returned IDs when creating or updating guests.",
-    { organizationId: z.string().describe("Organization GUID") },
-    async ({ organizationId }) => ({
-      content: [{ type: "text", text: JSON.stringify(await client.listGuestGroups(organizationId), null, 2) }],
+    "Get all guest groups available to the API key's organization (org-specific + system defaults). Use the returned IDs when creating or updating guests.",
+    {},
+    async () => ({
+      content: [{ type: "text", text: JSON.stringify(await client.listGuestGroups(), null, 2) }],
+    })
+  );
+
+  // ── Messaging Tools ──
+  //
+  // Threaded 1:1 chat between the key's organization and one of its contacts.
+  // Distinct from send_message_to_contacts / send_message_to_guests, which are
+  // one-way broadcasts: these read and write a persistent conversation the
+  // contact can reply into.
+
+  server.tool(
+    "list_conversations",
+    "List the organization's conversations, newest activity first, each with its contact, last message and unread count. Scoped to the API key's organization — there is no organization parameter. Returns { data: [...], pagination: { totalCount, page, pageSize, totalPages } }.",
+    {
+      pageNo: z.number().optional().describe("Page number (1-based). Defaults to 1."),
+      pageSize: z.number().optional().describe("Conversations per page. Defaults to 100."),
+      searchTerm: z
+        .string()
+        .optional()
+        .describe(
+          "Case-insensitive substring matched against either side: contact name/email/phone and organization name/email/phone. A term with 3+ digits also matches phone numbers ignoring formatting."
+        ),
+      isUnreadOnly: z
+        .boolean()
+        .optional()
+        .describe("Keep only conversations with a non-zero unread count. Defaults to false."),
+    },
+    async (params) => ({
+      content: [
+        { type: "text", text: JSON.stringify(await client.listConversations(params), null, 2) },
+      ],
+    })
+  );
+
+  server.tool(
+    "get_conversation",
+    "Get one conversation by ID with its contact, last message and unread count. lastMessage is a preview of the newest message only — use list_messages to page the thread.",
+    { id: z.string().describe("Conversation GUID. Must belong to the API key's organization.") },
+    async ({ id }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.getConversation(id), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "create_conversation",
+    "Open the conversation with a contact. Get-or-create: a conversation is identified by (organization, contact), so calling this twice for the same contact returns the existing thread rather than a duplicate. Takes a contactId — turn a guest ID into one with get_contact_by_guest.",
+    {
+      contactId: z
+        .string()
+        .describe("Contact GUID to open a conversation with. Must be a contact of the API key's organization."),
+    },
+    async ({ contactId }) => ({
+      content: [
+        { type: "text", text: JSON.stringify(await client.createConversation(contactId), null, 2) },
+      ],
+    })
+  );
+
+  server.tool(
+    "get_conversation_with_contact",
+    "Look up the conversation with a contact by contactId, so an integration holding only contact IDs never has to store conversation IDs. This is the usual entry point: guest ID -> get_contact_by_guest -> this with isCreateNew=true -> send_conversation_message.",
+    {
+      contactId: z.string().describe("Contact GUID. Must be a contact of the API key's organization."),
+      isCreateNew: z
+        .boolean()
+        .describe(
+          "true opens the conversation if it does not exist yet (same as create_conversation). false is get-only and returns 404 when there is no thread."
+        ),
+    },
+    async ({ contactId, isCreateNew }) => ({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            await client.getConversationWithContact(contactId, isCreateNew),
+            null,
+            2
+          ),
+        },
+      ],
+    })
+  );
+
+  server.tool(
+    "get_contact_by_guest",
+    "Resolve an event guest ID to the contact the conversation tools take. Matched on exact phone, then case-insensitive email — guest IDs and contact IDs are unrelated. Returns 404 when no contact exists for the guest, which may be permanent or replication lag, so retry briefly then give up.",
+    {
+      guestId: z
+        .string()
+        .describe("Guest GUID. Must be a guest of an event of the API key's organization."),
+    },
+    async ({ guestId }) => ({
+      content: [
+        { type: "text", text: JSON.stringify(await client.getContactByGuest(guestId), null, 2) },
+      ],
+    })
+  );
+
+  server.tool(
+    "list_messages",
+    "Page a conversation's messages, both sides, newest first. isFromOrganization tells the sides apart; the contact's SMS replies appear here like any other message. Returns { data: [...], pagination: { totalCount, page, pageSize, totalPages } }.",
+    {
+      conversationId: z
+        .string()
+        .describe("Conversation GUID. Must belong to the API key's organization."),
+      eventId: z
+        .string()
+        .optional()
+        .describe(
+          "Return only messages tagged to this event, on both sides. Untagged messages (inbound SMS above all) drop out; an event that matches nothing returns an empty page."
+        ),
+      pageNo: z.number().optional().describe("Page number (1-based). Defaults to 1."),
+      pageSize: z.number().optional().describe("Messages per page. Defaults to 100."),
+      searchTerm: z
+        .string()
+        .optional()
+        .describe("Case-insensitive substring matched against the message body."),
+    },
+    async ({ conversationId, ...params }) => ({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(await client.listMessages(conversationId, params), null, 2),
+        },
+      ],
+    })
+  );
+
+  server.tool(
+    "send_conversation_message",
+    "Send a message into one of the organization's conversations, from either side. messageBody and attachments are both optional, so either alone is a valid message. Delivery is asynchronous — success means stored and queued, not delivered. By default the message is attributed to the organization owner and appears in the web app as though they sent it; set sendFrom to 'Contact' to record the contact's own reply instead.",
+    {
+      conversationId: z
+        .string()
+        .describe("Conversation GUID to send into. Must belong to the API key's organization."),
+      messageBody: z.string().optional().describe("Message text. Omit to send attachments only."),
+      eventId: z
+        .string()
+        .optional()
+        .describe(
+          "Tag the message to one of this organization's events. Optional; an event owned by another organization is rejected."
+        ),
+      attachments: z
+        .array(
+          z.object({
+            url: z.string().describe("Public URL from upload_conversation_docs (required)"),
+            id: z.string().optional().describe("The upload's id"),
+            fileName: z.string().optional().describe("Original file name"),
+            fileType: z.string().optional().describe("MIME type, e.g. image/png"),
+            storageFileName: z.string().optional().describe("The blob's unique storage name"),
+          })
+        )
+        .optional()
+        .describe("Files to attach — pass upload_conversation_docs entries through verbatim."),
+      inApp: z
+        .boolean()
+        .optional()
+        .describe(
+          "Deliver as in-app push. Reaches only contacts with a registered account. Defaults to false."
+        ),
+      inSMS: z
+        .boolean()
+        .optional()
+        .describe(
+          "Deliver by SMS. The only channel that reaches a contact with no account, and the one their replies come back on. Defaults to false."
+        ),
+      inEmail: z.boolean().optional().describe("Deliver by email. Defaults to false."),
+      sendFrom: z
+        .enum(["Organization", "Contact"])
+        .optional()
+        .describe(
+          "Which side the message is attributed to. 'Organization' (the default) stores it as sent by the organization owner and dispatches on the channels above. 'Contact' stores it as the contact's own message, exactly as an inbound SMS reply — isFromOrganization is false, the organization's unread count goes up, and the delivery channels dispatch nothing, since they describe how to reach the contact. It changes attribution only: the key still has to be allowed to write to the conversation."
+        ),
+      contactId: z
+        .string()
+        .optional()
+        .describe(
+          "The contact the message is from. Required when sendFrom is 'Contact', and must be this conversation's own contact — a conversation is the pair (organization, contact) and has no other participant. Ignored when sending as the organization."
+        ),
+    },
+    async (params) => ({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(await client.sendConversationMessage(params), null, 2),
+        },
+      ],
+    })
+  );
+
+  server.tool(
+    "mark_conversation_read",
+    "Mark every message in a conversation read as of now, on the organization side. Idempotent, and the mark only moves forward. Note this is the same read state the organization owner sees in the web app, so it clears their badge too.",
+    { id: z.string().describe("Conversation GUID. Must belong to the API key's organization.") },
+    async ({ id }) => ({
+      content: [
+        { type: "text", text: JSON.stringify(await client.markConversationRead(id), null, 2) },
+      ],
+    })
+  );
+
+  server.tool(
+    "upload_conversation_docs",
+    "Upload message attachments and get back their URLs, ready to pass as attachments on send_conversation_message. Not conversation-scoped — an upload binds to a thread only when a message references it. Returns one entry per successfully stored file, in order, so compare the length against what you sent. Keep files small: the bytes travel base64-encoded through this tool call.",
+    {
+      files: z
+        .array(
+          z.object({
+            fileName: z.string().describe("Original file name, e.g. menu.pdf"),
+            contentBase64: z.string().describe("The file's bytes, base64-encoded"),
+            contentType: z
+              .string()
+              .optional()
+              .describe("MIME type, e.g. image/png. Defaults to application/octet-stream."),
+          })
+        )
+        .describe("Files to upload. At least one is required."),
+    },
+    async (params) => ({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(await client.uploadConversationDocs(params), null, 2),
+        },
+      ],
+    })
+  );
+
+  server.tool(
+    "get_chat_hub_info",
+    "How to connect to the realtime chat hub (GET /api/portal/chat). That path is a SignalR WebSocket handshake, not a REST call, and a persistent socket cannot live inside this stateless server — so this returns the hub URL, how to authenticate, what the connection is subscribed to, and the server-to-client events, for the caller to connect with their own SignalR client. Pass contactId for a connection scoped to a single thread instead of the whole organization. Sending stays on send_conversation_message and mark_conversation_read. Your API key is not included in the response.",
+    {
+      contactId: z
+        .string()
+        .optional()
+        .describe(
+          "Narrow the connection to one contact's thread instead of the whole organization: it joins contact-{contactId} rather than org-{organizationId} and receives that conversation only. The contact scope replaces the organization group rather than adding to it, which is what makes it safe for a contact-facing client — for both views open two connections. Omit for the organization-wide subscription."
+        ),
+    },
+    async ({ contactId }) => ({
+      content: [
+        { type: "text", text: JSON.stringify(await client.getChatHubInfo(contactId), null, 2) },
+      ],
     })
   );
 

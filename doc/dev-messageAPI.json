@@ -1,0 +1,2213 @@
+{
+"x-generator": "NSwag v14.0.3.0 (NJsonSchema v11.0.0.0 (Newtonsoft.Json v13.0.0.0))",
+"openapi": "3.0.0",
+"info": {
+"title": "AeonPassChat.API",
+"version": "1.0.0"
+},
+"servers": [
+{
+"url": "https://apv2-gatewayapp-dev-westus3.azurewebsites.net"
+}
+],
+"paths": {
+"/api/conversations": {
+"post": {
+"tags": [
+"Conversations"
+],
+"summary": "Create (get-or-create) a conversation with a contact",
+"description": "Org members (with OrganizationId) or direct-event users (with EventId): opens the conversation for (org, TargetId contactId), returning the existing one instead of a duplicate.",
+"operationId": "AeonPassChatAPIEndPointsConversationsCreateConversationEndpoint",
+"requestBody": {
+"x-name": "CreateConversationEndpointRequest",
+"description": "",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/CreateConversationEndpointRequest"
+}
+}
+},
+"required": true,
+"x-position": 1
+},
+"responses": {
+"200": {
+"description": "Success",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/ConversationDto"
+}
+}
+}
+},
+"401": {
+"description": "Unauthorized"
+}
+},
+"security": [
+{
+"JWTBearerAuth": []
+}
+]
+}
+},
+"/api/conversations/{conversationId}/messages": {
+"get": {
+"tags": [
+"Conversations"
+],
+"summary": "Get paginated list of conversation messages",
+"description": "Returns a paged list of messages for a conversation. Supports optional filtering by event and keyword search.",
+"operationId": "AeonPassChatAPIEndPointsMessagesListMessagesEndPoint",
+"parameters": [
+{
+"name": "conversationId",
+"in": "path",
+"required": true,
+"schema": {
+"type": "string",
+"format": "guid"
+}
+},
+{
+"name": "eventId",
+"in": "query",
+"schema": {
+"type": "string",
+"format": "guid",
+"nullable": true
+}
+},
+{
+"name": "pageNumber",
+"in": "query",
+"required": true,
+"schema": {
+"type": "integer",
+"format": "int32"
+}
+},
+{
+"name": "pageSize",
+"in": "query",
+"required": true,
+"schema": {
+"type": "integer",
+"format": "int32"
+}
+},
+{
+"name": "searchTerm",
+"in": "query",
+"schema": {
+"type": "string",
+"nullable": true
+}
+}
+],
+"responses": {
+"200": {
+"description": "Success",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/PaginationResultOfMessageDto"
+}
+}
+}
+},
+"401": {
+"description": "Unauthorized"
+}
+},
+"security": [
+{
+"JWTBearerAuth": []
+}
+]
+}
+},
+"/api/conversations/{id}": {
+"get": {
+"tags": [
+"Conversations"
+],
+"summary": "Get conversation by id",
+"description": "Get conversation by id",
+"operationId": "AeonPassChatAPIEndPointsConversationGetConversationEndPoint",
+"parameters": [
+{
+"name": "id",
+"in": "path",
+"required": true,
+"schema": {
+"type": "string",
+"format": "guid"
+}
+},
+{
+"name": "eventId",
+"in": "query",
+"description": "Optional: the event this request acts under. Only meaningful for direct-event callers â€” it lets\nthem open a thread that carries no readable message yet, scoped to that event (doc 16 Â§6.7).\nIgnored for org-member and contact callers.",
+"schema": {
+"type": "string",
+"format": "guid",
+"nullable": true
+}
+}
+],
+"responses": {
+"200": {
+"description": "Success",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/ConversationDto"
+}
+}
+}
+},
+"401": {
+"description": "Unauthorized"
+}
+},
+"security": [
+{
+"JWTBearerAuth": []
+}
+]
+}
+},
+"/api/conversations/{id}/mark-read": {
+"put": {
+"tags": [
+"Conversations"
+],
+"summary": "Mark messages and conversation as read",
+"description": "Mark messages and conversation as read",
+"operationId": "AeonPassChatAPIEndPointsConversationsMarkAsReadConversationEndPoint",
+"parameters": [
+{
+"name": "id",
+"in": "path",
+"required": true,
+"schema": {
+"type": "string",
+"format": "guid"
+}
+}
+],
+"responses": {
+"200": {
+"description": "Success",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/MarkAsReadConversationEndPointResponse"
+}
+}
+}
+},
+"401": {
+"description": "Unauthorized"
+}
+},
+"security": [
+{
+"JWTBearerAuth": []
+}
+]
+}
+},
+"/api/conversations/contact/{guestId}": {
+"get": {
+"tags": [
+"Conversations"
+],
+"summary": "Get contact by guest id",
+"description": "Get contact by guest id",
+"operationId": "AeonPassChatAPIEndPointsConversationGetContactByGuestEndPoint",
+"parameters": [
+{
+"name": "guestId",
+"in": "path",
+"required": true,
+"schema": {
+"type": "string",
+"format": "guid"
+}
+}
+],
+"responses": {
+"200": {
+"description": "Success",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/ContactDto"
+}
+}
+}
+},
+"401": {
+"description": "Unauthorized"
+}
+},
+"security": [
+{
+"JWTBearerAuth": []
+}
+]
+}
+},
+"/api/conversations/list": {
+"get": {
+"tags": [
+"Conversations"
+],
+"summary": "Get list of user conversations",
+"description": "Get list of user conversations",
+"operationId": "AeonPassChatAPIEndPointsConversationListConversationsEndPoint",
+"parameters": [
+{
+"name": "pageNumber",
+"in": "query",
+"schema": {
+"type": "integer",
+"format": "int32",
+"nullable": true
+}
+},
+{
+"name": "pageSize",
+"in": "query",
+"schema": {
+"type": "integer",
+"format": "int32",
+"nullable": true
+}
+},
+{
+"name": "searchTerm",
+"in": "query",
+"schema": {
+"type": "string",
+"nullable": true
+}
+},
+{
+"name": "isUnreadOnly",
+"in": "query",
+"schema": {
+"type": "boolean",
+"nullable": true
+}
+},
+{
+"name": "view",
+"in": "query",
+"description": "Optional tab filter: \"org\" | \"contact\" | \"auto\" (default). Only narrows what the token already allows.",
+"schema": {
+"type": "string",
+"nullable": true
+}
+},
+{
+"name": "organizationId",
+"in": "query",
+"description": "Optional organization filter: keep only conversations of this organization. Like View it\n            only narrows what the caller may already see (an org they hold no view on yields an empty page, not an error).",
+"schema": {
+"type": "string",
+"format": "guid",
+"nullable": true
+}
+}
+],
+"responses": {
+"200": {
+"description": "Success",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/PaginationResultOfConversationDto"
+}
+}
+}
+},
+"401": {
+"description": "Unauthorized"
+}
+},
+"security": [
+{
+"JWTBearerAuth": []
+}
+]
+}
+},
+"/api/conversations/send-message": {
+"post": {
+"tags": [
+"Conversations"
+],
+"summary": "Send new message",
+"description": "Send new message",
+"operationId": "AeonPassChatAPIEndPointsMessagesSaveMessageEndPoint",
+"requestBody": {
+"x-name": "SaveMessageEndPointRequest",
+"description": "",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/SaveMessageEndPointRequest"
+}
+}
+},
+"required": true,
+"x-position": 1
+},
+"responses": {
+"200": {
+"description": "Success",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/SaveMessageEndPointResponse"
+}
+}
+}
+},
+"401": {
+"description": "Unauthorized"
+}
+},
+"security": [
+{
+"JWTBearerAuth": []
+}
+]
+}
+},
+"/api/conversations/twillio-notification": {
+"post": {
+"tags": [
+"Conversations"
+],
+"summary": "send Twillio inbound response signalr notification",
+"description": "send Twillio inbound response signalr notification",
+"operationId": "AeonPassChatAPIEndPointsTwillioTwilioWebHookNotificationEndPoint",
+"requestBody": {
+"x-name": "TwilioWebHookNotificationEndPointRequest",
+"description": "",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/TwilioWebHookNotificationEndPointRequest"
+}
+}
+},
+"required": true,
+"x-position": 1
+},
+"responses": {
+"200": {
+"description": "Success",
+"content": {
+"application/json": {
+"schema": {
+"type": "boolean"
+}
+}
+}
+}
+}
+}
+},
+"/api/conversations/upload-docs": {
+"post": {
+"tags": [
+"Conversations"
+],
+"summary": "Uplaod docs.",
+"description": "This endpoint will return image url and other file information after uplaod it on storage.",
+"operationId": "AeonPassChatAPIEndPointsConversationsUploadDocsEndPoint",
+"requestBody": {
+"x-name": "UploadDocsEndPointRequest",
+"description": "",
+"content": {
+"multipart/form-data": {
+"schema": {
+"$ref": "#/components/schemas/UploadDocsEndPointRequest"
+}
+}
+},
+"required": true,
+"x-position": 1
+},
+"responses": {
+"200": {
+"description": "Success",
+"content": {
+"application/json": {
+"schema": {
+"type": "array",
+"items": {
+"$ref": "#/components/schemas/UploadDocsEndPointResponse"
+}
+}
+}
+}
+},
+"401": {
+"description": "Unauthorized"
+}
+},
+"security": [
+{
+"JWTBearerAuth": []
+}
+]
+}
+},
+"/api/conversations/with-contact/{contactId}": {
+"get": {
+"tags": [
+"Conversations"
+],
+"summary": "Get (or create) the conversation with a contact",
+"description": "Entry point for org members and direct-event users: ContactId is the contact to open the conversation with. OrganizationId is optional and validated against the token org / the contact's org when supplied. EventId is required for a direct-event caller (no org membership on the contact's organization) â€” it authorizes the request via event can_message_read and scopes the response to the messages that event access covers; it is ignored for org-member and contact callers. Contact users can also use GET /conversations/with-organization/{OrganizationId}.",
+"operationId": "AeonPassChatAPIEndPointsConversationGetConversationWithContactEndPoint",
+"parameters": [
+{
+"name": "contactId",
+"in": "path",
+"required": true,
+"description": "The contactId (in the caller's org) to open the conversation with.",
+"schema": {
+"type": "string",
+"format": "guid"
+}
+},
+{
+"name": "organizationId",
+"in": "query",
+"description": "Optional: the caller's organization id â€” validated against the token org when supplied.",
+"schema": {
+"type": "string",
+"format": "guid",
+"nullable": true
+}
+},
+{
+"name": "isCreateNew",
+"in": "query",
+"required": true,
+"description": "Create the conversation if it does not exist yet (get-or-create).",
+"schema": {
+"type": "boolean"
+}
+},
+{
+"name": "eventId",
+"in": "query",
+"description": "Optional: the event this request acts under. **Required for direct-event callers** (no org\nmembership on the contact's organization) â€” it authorizes opening/creating the thread and scopes\nwhat they see. Ignored for org-member and contact callers (doc 16 Â§6.7).",
+"schema": {
+"type": "string",
+"format": "guid",
+"nullable": true
+}
+}
+],
+"responses": {
+"200": {
+"description": "Success",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/ConversationDto"
+}
+}
+}
+},
+"401": {
+"description": "Unauthorized"
+}
+},
+"security": [
+{
+"JWTBearerAuth": []
+}
+]
+}
+},
+"/api/conversations/with-organization/{organizationId}": {
+"get": {
+"tags": [
+"Conversations"
+],
+"summary": "Get my conversation with an organization",
+"description": "Contact entry point (get-only â€” conversations are started by the organization): the caller's own contact record in the given organization is resolved by identity, no org permission required. Works for org members of another org too.",
+"operationId": "AeonPassChatAPIEndPointsConversationGetConversationWithOrganizationEndPoint",
+"parameters": [
+{
+"name": "organizationId",
+"in": "path",
+"required": true,
+"description": "The organization to open my conversation with (I am the contact of that org).",
+"schema": {
+"type": "string",
+"format": "guid"
+}
+}
+],
+"responses": {
+"200": {
+"description": "Success",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/ConversationDto"
+}
+}
+}
+},
+"401": {
+"description": "Unauthorized"
+}
+},
+"security": [
+{
+"JWTBearerAuth": []
+}
+]
+}
+},
+"/api/portal/chat": {
+"get": {
+"tags": [
+"Realtime (SignalR)"
+],
+"summary": "Realtime chat hub for API-key consumers (X-API-KEY) â€” WebSocket, not a REST endpoint",
+"description": "The realtime counterpart to the `/portal` endpoints: a SignalR hub authenticated **only** by the\nAPI key. Deliberately a separate hub from `/chat` so the token path and the key\npath share no authorization code. **\"Try it out\" cannot exercise this path** â€” a plain `GET` is\nrejected by the handshake.\n\n### Choose your subscription first\nOne key, two subscription shapes. The optional\n`contactId` on the handshake is what picks between\nthem, and a connection is one or the other â€” **never both**:\n\n| Handshake | Group joined | Receives | Use it for |\n| --- | --- | --- | --- |\n| `?apikey={key}` | `org-{organizationId}` | every conversation of your organization, both sides of every thread | an operator console, an inbox view, a CRM sync â€” anything organization-wide |\n| `?apikey={key}&contactId={contactId}` | `contact-{contactId}` | **one thread only** â€” that contact's conversation with your organization | a contact-facing widget, kiosk or app screen, for a person who may have no AeonPass account |\n\nThe contact scope **replaces** the organization group rather than adding to it. That is the whole\npoint of it: a contact-facing client must not receive the organization's other conversations. If\nyou need both views at once, open two connections.\n\n### Where to connect\nThis service maps the hub at `/portal/chat`. Public callers reach it\nthrough the API gateway, which prefixes every route in this document â€” this one included â€” with\n`/api`. Pick the row matching the host you are actually calling:\n\n| You are calling | Hub URL |\n| --- | --- |\n| The gateway â€” the `servers` entry above, and what every published integration uses | `wss://{host}/api/portal/chat` |\n| This service directly â€” in-cluster, or a local run | `wss://{host}/portal/chat` |\n\nUsing the wrong one fails as a **404 on the negotiate request**, not a 401 â€” if you are debugging\nan auth problem and seeing 404, this is why.\n\n### Handshake\nYour SignalR client does all of this; it matters only when debugging. The client first `POST`s to\n`â€¦/portal/chat/negotiate?negotiateVersion=1`. Where the Azure SignalR\nService backplane is configured, that answers with a redirect payload â€” a `url` on the service\nhost plus a short-lived `accessToken` â€” and the WebSocket is then opened against **that** host\nrather than this one. So the socket you see on the wire terminates at `*.service.signalr.net`,\nand the `101 Switching Protocols` comes from there.\n\n### Authentication\nPrefer the `X-API-KEY` header wherever your client can set\nheaders on the handshake â€” `@microsoft/signalr` can under Node, a browser cannot.\n\nThe query form\n`?apikey={key}` is the fallback, and this is the one\nroute in the whole API that accepts a key in a URL: every other portal route requires the header,\nwhich keeps a long-lived key out of access logs, request telemetry and browser history. One thing\nto know when choosing it â€” the negotiate redirect carries the key onward into the Azure SignalR\nService `url`, whereas the header form leaves that URL clean. Both are accepted; the header keeps\nthe key on fewer hops.\n\nEither way the path fails closed: a missing, unknown or revoked key is a `401` at negotiate, so\nno socket is opened.\n\n### The `contactId` parameter\nOptional, query string only, and honoured on this path alone. Supply it to narrow the connection\nto one contact's thread; omit it for the organization-wide subscription this hub has always given.\n\nIt is **validated during authentication**, before any socket exists: the contact must exist in\nchat's replica and belong to **this key's** organization. If it does not, the negotiate request\nfails `401` â€” deliberately, rather than either of the two tempting alternatives. Falling back to\nthe organization group would hand a contact-facing client every conversation in the organization,\nwhich is the leak this parameter exists to prevent; narrowing silently to nothing would be\nindistinguishable from a dead connection. So a `401` here with a valid key means the `contactId`\nis unknown, malformed, or another organization's.\n\nNote the asymmetry with the key itself: the key may also travel as a header, but\n`contactId` is query-string only. A contact id is not\na secret, and keeping it in the URL means it is visible in the one place you debug a subscription\nfrom.\n\n### What the connection is subscribed to\nOne group, joined on connect, chosen by the handshake â€” see the chooser at the top of this entry:\n\n| | Group | Scope |\n| --- | --- | --- |\n| No `contactId` | `org-{organizationId}` | the key's whole organization |\n| With `contactId` | `contact-{contactId}` | that contact's single thread |\n\nStill no `event-{eventId}` group and no user-id addressing: those are person-scoped views an\norganization key does not hold. The contact group is not a person-scoped view â€” it is one\n*conversation* of the key's own organization, which the key can already read over HTTP.\n\nThe hub is **receive-only**: it exposes no client-callable methods, on either shape. Sending stays\non HTTP â€” `POST /api/portal/conversations/send-message` and\n`PUT /api/portal/conversations/{id}/mark-read`. Note that mark-read takes no\nfields but still requires a JSON body: send `{}` with `Content-Type: application/json` or it\nanswers `415`.\n\n**Sending from the contact side** is the send endpoint's `sendFrom` field, not a hub concern:\n`sendFrom: \"Contact\"` with a `contactId` records the message as coming from that contact, exactly\nas an inbound SMS reply is stored, so it arrives on every subscriber with\n`lastMessage.isFromOrganization: false`. Two things a contact-facing client should know: those\nsends dispatch **nothing** to the contact (the `inApp`/`inSMS`/`inEmail` channels describe how to\nreach the contact, so they only mean anything when sending as the organization), and there is no\ncontact-side **mark-read** on this surface â€” `PUT â€¦/mark-read` always records the *organization*\nas the reader, whichever way the connection is scoped.\n\n### Server â†’ client events\n\n**`ReceiveMessage`** â€” a message was sent in a conversation this connection covers: any of your\norganization's on the org-wide shape, that one thread on the contact-scoped shape. Either side's\nmessage, from any surface. Not gated on the contact's delivery channels, so a send with `inApp`,\n`inSMS` and `inEmail` all false still arrives here. Payload `ConversationPushDto`:\n\n| Field | Type | Notes |\n| --- | --- | --- |\n| `id` | uuid | the **conversation** id â€” not the message id |\n| `organizationId` | uuid | always your organization |\n| `organizationName`, `organizationLogoUrl`, `organizationIsSetup`, `organizationEmail`, `organizationPhone` | string / bool | organization display fields |\n| `contact` | `ConversationParticipantDto` | the contact side of the thread |\n| `lastMessage` | `MessageDto` | **the new message** â€” body, attachments, sender, timestamp |\n| `lastMessage.isFromOrganization` | bool | **which side sent it** â€” the field to branch on. `false` covers every contact-side message: an SMS reply, a contact's in-app send, and one recorded through `sendFrom: \"Contact\"` |\n| `senderUserId` | uuid | who sent it; same value as `lastMessage.senderId`. On a contact-side message this is the **contactId**, not a user id |\n\nDeliberately caller-neutral: it carries no `unreadCount` and no `isReadByUser`, because one group\npush is delivered to every subscriber and those values differ per reader. Track them locally, or\nre-read `GET /api/portal/conversations/{id}`.\n\nThe push is sender-neutral, so **your own sends come back to you** on the connection that made\nthem. Reconcile on `lastMessage.id` rather than assuming an inbound event is someone else's.\n\n**`MarkMessagesRead`** â€” a read receipt, and which direction you see depends on which shape you\nconnected as. Your own `mark-read` call never echoes back to you; that endpoint returns the receipt\nin its HTTP response instead. Payload `MarkAsReadConversationDto`:\n\n| Field | Type | Org-wide connection | Contact-scoped connection |\n| --- | --- | --- | --- |\n| `id` | uuid | conversation id | conversation id |\n| `readDate` | date-time | when it was read | when it was read |\n| `organizationId` | uuid | your organization | your organization |\n| `readByContact` | bool | `true` â€” **the contact** read your message | `false` â€” **the organization** read the contact's message |\n| `receiverMemberUserId` | uuid or null | null â€” it addresses the token surface | the contact's linked user account, or null when they have none |\n| `contactId` | uuid or null | null | the contact whose thread was read â€” the value that routed this event here |\n\nSo on the org-wide shape this event means \"the other side has seen it\", as before. On the\ncontact-scoped shape it is the mirror: your organization has seen the contact's message. Branch on\n`readByContact` rather than assuming a direction, and note this is the only channel that delivers\na read receipt to a contact who has **no** user account â€” `Clients.User` on the token hub cannot\naddress one.\n\n#### Example 1 â€” organization-wide, Node (header form)\nPreferred wherever your client can set handshake headers: the key never enters a URL, and so never\nreaches the Azure SignalR Service redirect.\n\n```js\nconst hub = new signalR.HubConnectionBuilder()\n  .withUrl(\"https://{host}/api/portal/chat\", {\n    headers: { \"X-API-KEY\": apiKey },\n  })\n  .withAutomaticReconnect()\n  .build();\n\nhub.on(\"ReceiveMessage\", c => {\n  if (c.lastMessage.isFromOrganization) return;      // our own outbound, echoed back\n  inbox.bump(c.id, c.contact, c.lastMessage);         // a contact replied\n});\n\nhub.on(\"MarkMessagesRead\", r => {\n  if (r.readByContact) inbox.markSeen(r.id, r.readDate);\n});\n\nawait hub.start();\n```\n\n#### Example 2 â€” organization-wide, browser (query form)\nA browser cannot set headers on the handshake, so the key goes in the query string. This is the one\nroute in the API that accepts that; treat the key as rotatable.\n\n```js\nconst hub = new signalR.HubConnectionBuilder()\n  .withUrl(\"https://{host}/api/portal/chat\"\n         + \"?apikey=\" + encodeURIComponent(apiKey))\n  .withAutomaticReconnect()\n  .build();\n\nhub.on(\"ReceiveMessage\", c => { /* same handlers as example 1 */ });\nhub.on(\"MarkMessagesRead\", r => { /* â€¦ */ });\n\nawait hub.start();\n```\n\n#### Example 3 â€” contact-scoped (one thread, no AeonPass account needed)\nAdd `contactId` and this connection receives that\ncontact's thread and nothing else. Get the `contactId` from\n`GET /api/portal/conversations/contact/{guestId}` or from the `contact.id` of any\nconversation read.\n\n```js\n// Both parameters in the query string; the key may equally be sent as a header here.\nconst url = \"https://{host}/api/portal/chat\"\n  + \"?apikey=\" + encodeURIComponent(apiKey)\n  + \"&contactId=\" + contactId;\n\nconst hub = new signalR.HubConnectionBuilder()\n  .withUrl(url)\n  .withAutomaticReconnect()\n  .build();\n\n// From this seat the ORGANIZATION is the other side, so the test inverts.\nhub.on(\"ReceiveMessage\", c => {\n  if (c.lastMessage.isFromOrganization) thread.append(c.organizationName, c.lastMessage);\n  else thread.confirmSent(c.lastMessage.id);          // our own send, echoed back\n});\n\n// readByContact is false on this shape: the organization read what the contact sent.\nhub.on(\"MarkMessagesRead\", r => thread.markSeen(r.id, r.readDate));\n\nawait hub.start();\n// A 401 at negotiate with a valid key means this contactId is not one of yours.\n```\n\nReplying from this seat is an HTTP call, not a hub call:\n\n```js\nawait fetch(\"https://{host}/api/portal/conversations/send-message\", {\n  method: \"POST\",\n  headers: { \"Content-Type\": \"application/json\", \"X-API-KEY\": apiKey },\n  body: JSON.stringify({\n    conversationId,\n    sendFrom: \"Contact\",      // omit, or \"Organization\", to send as the organization\n    contactId,                // required by sendFrom: \"Contact\"; must be this thread's contact\n    messageBody: \"on my way\",\n  }),\n});\n```",
+"operationId": "PortalChatHub",
+"parameters": [
+{
+"name": "apikey",
+"in": "query",
+"description": "Per-organization API key. Accepted in the query string on this path only, because a SignalR handshake cannot set the `X-API-KEY` header. Optional: send the header instead wherever your client supports it, which also keeps the key out of the Azure SignalR Service redirect URL.",
+"schema": {
+"type": "string"
+}
+},
+{
+"name": "contactId",
+"in": "query",
+"description": "Optional. Narrows the connection to one contact's thread instead of the whole organization: the connection joins `contact-{contactId}` rather than `org-{organizationId}`, and receives that conversation only. Must be a contact of the key's own organization â€” anything else fails the negotiate request with a 401 rather than falling back to the organization-wide subscription. Query string only, on this path only.",
+"schema": {
+"type": "string"
+}
+},
+{
+"name": "id",
+"in": "query",
+"description": "Connection id returned by the preceding `/negotiate` call. Set by the SignalR client, not by hand.",
+"schema": {
+"type": "string"
+}
+}
+],
+"responses": {
+"101": {
+"description": "Switching Protocols â€” the WebSocket connection is established. Messages then flow as SignalR frames rather than HTTP responses."
+},
+"401": {
+"description": "Missing, unknown or revoked API key â€” or a `contactId` that is malformed, unknown, or a contact of a different organization."
+}
+},
+"security": [
+{
+"X-API-KEY": []
+}
+],
+"x-websocket": true,
+"x-protocol": "signalr"
+}
+},
+"/api/portal/conversations": {
+"post": {
+"tags": [
+"Portal"
+],
+"summary": "Start a conversation with a contact.",
+"description": "Opens the conversation between the API key's organization and a contact.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- Get-**or**-create: a conversation is identified by (organization, contact), so calling this\n  twice for the same contact returns the existing thread rather than creating a duplicate.\n- `contactId` identifies a **contact**. Contacts are managed in the Organization service â€”\n  create them with `POST /portal/contact`, or turn an event guest id into a contactId with\n  `GET /portal/conversations/contact/{guestId}`.\n- The contact must belong to the API key's organization; one from another organization is\n  rejected with `ORGANIZATION_ID_MISMATCH`.\n- A contactId that chat has not replicated yet returns a retryable\n  `CONTACT_NOT_SYNCED` error â€” contacts arrive from the Organization service within seconds, so\n  retry briefly. The same code answers an id that never existed, so give up after a few attempts.\n\n**Response:** the conversation, whose `id` is what the send-message and message-list endpoints\ntake. A freshly created one has `lastMessage` null and `unreadCount` 0.",
+"operationId": "AeonPassChatAPIEndPointsPortalConversationsPortalCreateConversationEndpoint",
+"requestBody": {
+"x-name": "PortalCreateConversationEndpointRequest",
+"description": "",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/PortalCreateConversationEndpointRequest"
+}
+}
+},
+"required": true,
+"x-position": 1
+},
+"responses": {
+"200": {
+"description": "The conversation, existing or newly created.",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/ConversationDto"
+}
+}
+}
+},
+"400": {
+"description": "Validation error â€” `errors[].errorCode` is `CONTACT_NOT_SYNCED` (unknown or not-yet-replicated contact) or `ORGANIZATION_ID_MISMATCH` (contact of another organization)."
+},
+"401": {
+"description": "Missing or invalid X-API-KEY."
+},
+"500": {
+"description": "Unexpected error while creating the conversation."
+}
+},
+"security": [
+{
+"X-API-KEY": []
+}
+]
+}
+},
+"/api/portal/conversations/{conversationId}/messages": {
+"get": {
+"tags": [
+"Portal"
+],
+"summary": "List a conversation's messages.",
+"description": "Returns a paginated page of the conversation's messages, both sides of the exchange, newest\nfirst (`messageDate` descending).\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- The conversation must belong to the API key's organization; any other id returns\n  `CONVERSATION_ACCESS_DENIED`, and an unknown id returns `404`.\n- `isFromOrganization` tells the two sides apart, and it is derived from **who the message is\n  from**, never from which surface recorded it. `false` therefore covers every contact-side\n  message alike: an SMS reply captured from Twilio, a send from the contact's own app, and one an\n  integration recorded with `sendFrom: \"Contact\"` on `POST /portal/conversations/send-message`.\n- `senderId` follows from that: a user id on an organization-side message, and the **contactId**\n  on a contact-side one. `sender` carries the display block either way, so prefer it for\n  rendering.\n- `isRead` is the receipt for the organization side: on a message you sent it turns true once the\n  contact has read past it; messages from the contact are always `true`.\n- `EventId` is a plain filter on the message's own tag â€” it narrows the page to that event's\n  exchange, on both sides. Untagged messages (inbound SMS above all) drop out, and an event id\n  that matches nothing returns an empty page rather than an error.\n- `SearchTerm` matches the message body (case-insensitive substring).\n- Attachments are returned inline on each message; they follow their message's visibility.\n\n**Response shape:**\n```json\n{\n  \"data\": [ ... ],\n  \"pagination\": { \"totalCount\": 100, \"page\": 1, \"pageSize\": 20, \"totalPages\": 5 }\n}\n```\nIf `PageNo`/`PageSize` are omitted they default to `1`/`100`.",
+"operationId": "AeonPassChatAPIEndPointsPortalMessagesPortalListMessagesEndPoint",
+"parameters": [
+{
+"name": "conversationId",
+"in": "path",
+"required": true,
+"description": "The conversation to read. Must belong to the API key's organization.",
+"schema": {
+"type": "string",
+"format": "guid"
+}
+},
+{
+"name": "eventId",
+"in": "query",
+"description": "Optional filter: return only the messages tagged to this event (both sides of the exchange). Untagged messages, inbound SMS included, are excluded.",
+"schema": {
+"type": "string",
+"format": "guid",
+"nullable": true
+}
+},
+{
+"name": "pageNo",
+"in": "query",
+"description": "Page to return, 1-based. Defaults to 1.",
+"schema": {
+"type": "integer",
+"format": "int32",
+"nullable": true
+}
+},
+{
+"name": "pageSize",
+"in": "query",
+"description": "Messages per page. Defaults to 100.",
+"schema": {
+"type": "integer",
+"format": "int32",
+"nullable": true
+}
+},
+{
+"name": "searchTerm",
+"in": "query",
+"description": "Free-text filter matched against the message body (case-insensitive substring).",
+"schema": {
+"type": "string",
+"nullable": true
+}
+}
+],
+"responses": {
+"200": {
+"description": "A page of the conversation's messages.",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/PortalPagedResponseOfMessageDto"
+}
+}
+}
+},
+"400": {
+"description": "Validation error â€” `errors[].errorCode` is `CONVERSATION_ACCESS_DENIED` (the conversation belongs to another organization)."
+},
+"401": {
+"description": "Missing or invalid X-API-KEY."
+},
+"404": {
+"description": "No active conversation with this id."
+},
+"500": {
+"description": "Unexpected error while listing messages."
+}
+},
+"security": [
+{
+"X-API-KEY": []
+}
+]
+}
+},
+"/api/portal/conversations/{id}": {
+"get": {
+"tags": [
+"Portal"
+],
+"summary": "Get a conversation by id.",
+"description": "Returns a single conversation with its contact, last message and unread count.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- Only conversations belonging to the API key's organization are readable; any other id returns\n  `CONVERSATION_ACCESS_DENIED`, and an unknown id returns `404`.\n- `unreadCount` and the read/seen flags are computed for the organization owner (the acting user\n  behind the API key), so they move when the key marks a thread read. They are the\n  **organization's** view of the thread on either side of it: a message recorded with\n  `sendFrom: \"Contact\"` is incoming, so it raises `unreadCount` rather than clearing it.\n- `lastMessage` is a preview of the newest message only â€” page the thread with\n  `GET /portal/conversations/{conversationId}/messages`. It is null on a thread with no messages.\n- `participants` holds the contact block alone; organization-side users are never stored as\n  participants. Use `contact` / `contactId`.\n- `callerRole` is always `ORG_MEMBER` on this surface.",
+"operationId": "AeonPassChatAPIEndPointsPortalConversationsPortalGetConversationEndPoint",
+"parameters": [
+{
+"name": "id",
+"in": "path",
+"required": true,
+"description": "The conversation to read. Must belong to the API key's organization.",
+"schema": {
+"type": "string",
+"format": "guid"
+}
+}
+],
+"responses": {
+"200": {
+"description": "The conversation.",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/ConversationDto"
+}
+}
+}
+},
+"400": {
+"description": "Validation error â€” `errors[].errorCode` is `CONVERSATION_ACCESS_DENIED` (the conversation belongs to another organization)."
+},
+"401": {
+"description": "Missing or invalid X-API-KEY."
+},
+"404": {
+"description": "No active conversation with this id."
+},
+"500": {
+"description": "Unexpected error while loading the conversation."
+}
+},
+"security": [
+{
+"X-API-KEY": []
+}
+]
+}
+},
+"/api/portal/conversations/{id}/mark-read": {
+"put": {
+"tags": [
+"Portal"
+],
+"summary": "Mark a conversation as read.",
+"description": "Marks every message in the conversation read as of now, on the organization side.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- The conversation must belong to the API key's organization; any other id returns\n  `CONVERSATION_ACCESS_DENIED`, and an unknown id returns `404`.\n- The read state is recorded for the organization **owner** (the acting user behind the API key),\n  so this also clears the badge the owner sees in the web app. Reading through the API and reading\n  in the app are the same read state â€” worth knowing before wiring this into an automation.\n- Idempotent, and the recorded time only moves forward: calling it again simply advances the read\n  mark to now.\n- The contact side is notified in real time (`MarkMessagesRead`) so their \"seen\" tick updates, on\n  both channels that can reach them: their linked user account on `/chat`, and a `/portal/chat`\n  subscriber connected as this contact (`?contactId=`). The second is the only one that reaches a\n  contact with **no** registered account â€” before it existed such a contact got no receipt at all.\n- Other members of the organization are not notified; they reconcile on their next fetch.\n\n**This is the organization's read mark â€” there is no contact-side equivalent here.** It records\nthe *organization* as the reader whichever way your connection is scoped, so a contact-facing\nintegration must not call it to represent the person reading: that would clear the organization's\nown badge. The contact side records a read only through their own app on the token surface.\n\n**Response:** `{ \"id\": \"...\", \"readDate\": \"...\" }`.",
+"operationId": "AeonPassChatAPIEndPointsPortalConversationsPortalMarkAsReadConversationEndPoint",
+"parameters": [
+{
+"name": "id",
+"in": "path",
+"required": true,
+"description": "The conversation to mark read. Must belong to the API key's organization.",
+"schema": {
+"type": "string",
+"format": "guid"
+}
+}
+],
+"responses": {
+"200": {
+"description": "The conversation id and the read timestamp that was recorded.",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/PortalMarkAsReadConversationEndPointResponse"
+}
+}
+}
+},
+"400": {
+"description": "Validation error â€” `errors[].errorCode` is `CONVERSATION_ACCESS_DENIED` (the conversation belongs to another organization)."
+},
+"401": {
+"description": "Missing or invalid X-API-KEY."
+},
+"404": {
+"description": "No active conversation with this id."
+},
+"500": {
+"description": "Unexpected error while marking the conversation read."
+}
+},
+"security": [
+{
+"X-API-KEY": []
+}
+]
+}
+},
+"/api/portal/conversations/contact/{guestId}": {
+"get": {
+"tags": [
+"Portal"
+],
+"summary": "Resolve a guest id to a contact.",
+"description": "Turns an **event guest id** into the **contactId** that the conversation endpoints take, so an\nintegration holding a guest id does not need the person's phone or email to start a chat.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- The guest must belong to an event of the API key's organization; guests of any other\n  organization return `404`.\n- The guest is matched to a contact by exact **phone**, otherwise by case-insensitive **email** â€”\n  guest ids and contact ids are unrelated.\n- A guest for whom no contact record exists returns `404`. That can be permanent (the guest was\n  never synced as a contact) or transient (replication lag), and the two are indistinguishable â€”\n  so retry briefly, then give up.\n\n**Response:** the contact. Its `id` is the `contactId` that the rest of the portal surface takes,\nand this endpoint is the usual place to get one:\n\n| Where | What it does |\n|---|---|\n| `GET /portal/conversations/with-contact/{contactId}` | open (or, with `IsCreateNew`, start) the thread |\n| `POST /portal/conversations` | start the thread |\n| `POST /portal/conversations/send-message`, with `sendFrom: \"Contact\"` | record a message **from** this contact |\n| `wss://â€¦/portal/chat?apikey=â€¦&contactId={contactId}` | subscribe to this contact's thread alone |\n\n`userId` is null for a contact who has never registered. That limits **outbound delivery** â€” no\nin-app push, so SMS/email only â€” but not the surface above: all four rows work for a contact with\nno account, which is what they are for.",
+"operationId": "AeonPassChatAPIEndPointsPortalContactPortalGetContactByGuestEndPoint",
+"parameters": [
+{
+"name": "guestId",
+"in": "path",
+"required": true,
+"description": "The event guest to resolve. Must be a guest of an event of the API key's organization.",
+"schema": {
+"type": "string",
+"format": "guid"
+}
+}
+],
+"responses": {
+"200": {
+"description": "The contact matching the guest.",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/ContactDto"
+}
+}
+}
+},
+"401": {
+"description": "Missing or invalid X-API-KEY."
+},
+"404": {
+"description": "No contact matches this guest, or the guest is not in the key's organization."
+},
+"500": {
+"description": "Unexpected error while resolving the guest."
+}
+},
+"security": [
+{
+"X-API-KEY": []
+}
+]
+}
+},
+"/api/portal/conversations/list": {
+"get": {
+"tags": [
+"Portal"
+],
+"summary": "List the organization's conversations.",
+"description": "Returns a paginated list of the API key's organization's conversations, newest activity first,\neach with its contact, last message and unread count.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- Scoped to the API key's organization. There is no way to widen it â€” no organization or view\n  parameter is accepted.\n- Ordered by last activity (`updatedOn`, falling back to `createdOn`), descending.\n- `SearchTerm` matches either side of the conversation: the contact's name, email or phone, and\n  the organization's name, email or phone. Case-insensitive substring; a term with 3+ digits also\n  matches phone numbers ignoring formatting.\n- `IsUnreadOnly=true` keeps only conversations whose `unreadCount` is greater than zero.\n- `unreadCount` is computed for the organization owner (the acting user behind the API key), and\n  counts only messages sent after the owner joined the organization.\n- `lastMessage` is null on a conversation that has no messages yet.\n- `callerRole` is always `ORG_MEMBER` on this surface.\n\n**Response shape:**\n```json\n{\n  \"data\": [ ... ],\n  \"pagination\": { \"totalCount\": 100, \"page\": 1, \"pageSize\": 20, \"totalPages\": 5 }\n}\n```\nIf `PageNo`/`PageSize` are omitted they default to `1`/`100`. A page past the end returns an\nempty `data` with the same `pagination.totalCount`.",
+"operationId": "AeonPassChatAPIEndPointsPortalConversationsPortalListConversationsEndPoint",
+"parameters": [
+{
+"name": "pageNo",
+"in": "query",
+"description": "Page to return, 1-based. Defaults to 1.",
+"schema": {
+"type": "integer",
+"format": "int32",
+"nullable": true
+}
+},
+{
+"name": "pageSize",
+"in": "query",
+"description": "Conversations per page. Defaults to 100.",
+"schema": {
+"type": "integer",
+"format": "int32",
+"nullable": true
+}
+},
+{
+"name": "searchTerm",
+"in": "query",
+"description": "Free-text filter matched against either side of the conversation: the contact's name, email and phone, and the organization's name, email and phone. Case-insensitive substring; phone also matches ignoring formatting.",
+"schema": {
+"type": "string",
+"nullable": true
+}
+},
+{
+"name": "isUnreadOnly",
+"in": "query",
+"description": "Keep only conversations with a non-zero unread count. Defaults to false.",
+"schema": {
+"type": "boolean",
+"nullable": true
+}
+}
+],
+"responses": {
+"200": {
+"description": "A page of the organization's conversations.",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/PortalPagedResponseOfConversationDto"
+}
+}
+}
+},
+"401": {
+"description": "Missing or invalid X-API-KEY."
+},
+"500": {
+"description": "Unexpected error while listing conversations."
+}
+},
+"security": [
+{
+"X-API-KEY": []
+}
+]
+}
+},
+"/api/portal/conversations/send-message": {
+"post": {
+"tags": [
+"Portal"
+],
+"summary": "Send a message in a conversation, from the organization or from its contact.",
+"description": "Records a message in a conversation and hands it off for delivery on the channels you select.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Which side the message is from:** `SendFrom` â€” `Organization` (the default) or `Contact`.\n\n| `SendFrom` | Stored as | Delivery | `ContactId` |\n|---|---|---|---|\n| `Organization` | from the organization **owner**, the acting user behind an API key â€” the message appears in the web app as though the owner sent it, and the thread is marked read for them | the channels below dispatch to the contact | ignored |\n| `Contact` | from the contact, exactly as an SMS reply is (`isFromOrganization: false`) | the channels below dispatch **nothing** â€” an incoming message notifies the organization instead | **required** |\n\n`SendFrom=Contact` lets one key mirror both halves of a thread â€” an integration that owns the\ncontact-facing surface can record the person's replies without a user account for them. It changes\nonly *attribution*: the key still has to be allowed to write to the conversation, and the contact\nis never a way to reach a conversation the key could not already reach.\n\n**`SendFrom=Contact` validation** â€” all of it, before anything is stored:\n- `ContactId` is required (`CONTACT_ID_REQUIRED`).\n- It must be **this conversation's** contact (`CONVERSATION_ACCESS_DENIED` on `contactId`) â€” a\n  conversation is the pair (organization, contact) and has no other participant.\n- That contact must exist in chat's replica (`CONTACT_NOT_SYNCED`) and belong to the API key's\n  organization (`ORGANIZATION_ID_MISMATCH`). A contact of another organization can never be\n  borrowed as a sender.\n- Unread is not cleared for the organization: an incoming message raises the organization's\n  `unreadCount`, and the response reflects that. Sending as the organization still marks the\n  thread read for the owner, as before.\n\n**Behavior:**\n- The conversation must belong to the API key's organization; any other id returns\n  `CONVERSATION_ACCESS_DENIED`, and an unknown id returns `404`.\n- `MessageBody` and `Attachments` are both optional, so either alone is a valid message.\n- `Attachments` take the values returned by `POST /portal/conversations/upload-docs`.\n- `EventId` tags the message to one of this organization's events. Optional; a message needs no\n  event. An event belonging to a **different** organization is rejected\n  (`ORGANIZATION_ID_MISMATCH`); an id not yet replicated into chat is accepted and stored as the\n  tag.\n- Delivery is asynchronous: the request succeeds once the message is persisted and queued,\n  independent of whether SMS/email delivery ultimately succeeds.\n- The message is pushed live to every `/portal/chat` subscriber of this organization, to a\n  `/portal/chat` subscriber connected as this conversation's contact (`?contactId=`), and to the\n  web/member apps â€” regardless of the delivery channels below, and whichever side sent it. Those\n  channels govern outbound delivery to the person, not who can see the message.\n\n**Delivery channels:** all default to `false`. Set none and the message is still stored and\npushed live, but nothing is dispatched to the contact. They are only meaningful when `SendFrom`\nis `Organization`: they describe how to reach the *contact*, so on a `SendFrom=Contact` send they\nare stored on the row but dispatch nothing.\n\n| Field | Channel |\n|-------|---------|\n| `InApp` | In-app push â€” reaches only a contact with a registered user account |\n| `InSMS` | SMS â€” the one channel that reaches a contact with no account, and the channel their replies come back on |\n| `InEmail` | Email |\n\n**Request examples**\n\nSending as the organization â€” `sendFrom` may be omitted entirely, which is what every caller did\nbefore it existed:\n\n```json\n{\n  \"conversationId\": \"3f1câ€¦\",\n  \"messageBody\": \"Your table is ready.\",\n  \"inSMS\": true\n}\n```\n\nRecording the contact's reply. `contactId` is required here and must be this conversation's own\ncontact; the delivery channels are left off because they would dispatch nothing:\n\n```json\n{\n  \"conversationId\": \"3f1câ€¦\",\n  \"sendFrom\": \"Contact\",\n  \"contactId\": \"a94eâ€¦\",\n  \"messageBody\": \"On my way.\"\n}\n```\n\n`sendFrom` is sent **by name** â€” `\"Organization\"` or `\"Contact\"`. The numeric form (`0`, `1`) also\nbinds, which is what the auto-generated example above shows, but prefer the name.\n\n**Response:** the conversation, with `lastMessage` set to the message just sent. On a\n`sendFrom=Contact` send, `lastMessage.isFromOrganization` is `false` and `lastMessage.senderId` is\nthe contactId.",
+"operationId": "AeonPassChatAPIEndPointsPortalMessagesPortalSaveMessageEndPoint",
+"requestBody": {
+"x-name": "PortalSaveMessageEndPointRequest",
+"description": "",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/PortalSaveMessageEndPointRequest"
+}
+}
+},
+"required": true,
+"x-position": 1
+},
+"responses": {
+"200": {
+"description": "The conversation, with the sent message in `lastMessage`.",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/PortalSaveMessageEndPointResponse"
+}
+}
+}
+},
+"400": {
+"description": "Validation error â€” `errors[].errorCode` is `CONVERSATION_ACCESS_DENIED` (the conversation belongs to another organization, or `contactId` is not this conversation's contact), `ORGANIZATION_ID_MISMATCH` (the `eventId` or the `contactId` belongs to another organization), `CONTACT_ID_REQUIRED` (`sendFrom` is `Contact` with no `contactId`) or `CONTACT_NOT_SYNCED` (the contact is not yet replicated into chat)."
+},
+"401": {
+"description": "Missing or invalid X-API-KEY."
+},
+"404": {
+"description": "No active conversation with this id."
+},
+"500": {
+"description": "Unexpected error while saving the message."
+}
+},
+"security": [
+{
+"X-API-KEY": []
+}
+]
+}
+},
+"/api/portal/conversations/upload-docs": {
+"post": {
+"tags": [
+"Portal"
+],
+"summary": "Upload message attachments.",
+"description": "Uploads one or more files to storage and returns their URLs, ready to be passed as `Attachments`\non `POST /portal/conversations/send-message`.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `multipart/form-data`, field name `File`; repeat the field to upload several files in one\n  request. A request carrying no file fails.\n- Uploading does not attach anything to a conversation on its own â€” send the returned\n  `url` / `fileName` / `fileType` / `storageFileName` values with the message.\n- Not conversation-scoped: an upload is not bound to a thread until a message references it, and\n  any conversation of this organization can then use it.\n\n**Response:** one entry per **successfully** stored file, in upload order. A file that fails to\nstore is left out, so compare the response length with the number of parts you sent.",
+"operationId": "AeonPassChatAPIEndPointsPortalConversationsPortalUploadDocsEndPoint",
+"requestBody": {
+"x-name": "PortalUploadDocsEndPointRequest",
+"description": "",
+"content": {
+"multipart/form-data": {
+"schema": {
+"$ref": "#/components/schemas/PortalUploadDocsEndPointRequest"
+}
+}
+},
+"required": true,
+"x-position": 1
+},
+"responses": {
+"200": {
+"description": "One entry per stored file, ready to send as an attachment.",
+"content": {
+"application/json": {
+"schema": {
+"type": "array",
+"items": {
+"$ref": "#/components/schemas/PortalUploadDocsEndPointResponse"
+}
+}
+}
+}
+},
+"401": {
+"description": "Missing or invalid X-API-KEY."
+},
+"500": {
+"description": "No file was supplied, or storing the upload failed."
+}
+},
+"security": [
+{
+"X-API-KEY": []
+}
+]
+}
+},
+"/api/portal/conversations/with-contact/{contactId}": {
+"get": {
+"tags": [
+"Portal"
+],
+"summary": "Get the conversation with a contact.",
+"description": "Looks up the conversation between the API key's organization and a contact **by contactId**, so an\nintegration that only stores contact ids does not have to remember conversation ids.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `IsCreateNew=false` (default) is get-only: no conversation yet returns `404`.\n- `IsCreateNew=true` opens one if it does not exist, exactly like `POST /portal/conversations`.\n- The contact must belong to the API key's organization; one from another organization returns\n  `CONVERSATION_ACCESS_DENIED`.\n- A contactId chat has not replicated yet returns the retryable `CONTACT_NOT_SYNCED` error.\n- The response is the same conversation shape the other reads return, so a single call can both\n  resolve the id and render the thread header.\n\nThis is the usual entry point for an integration: guest id â†’ `contactId`\n(`GET /portal/conversations/contact/{guestId}`) â†’ this call with `IsCreateNew=true` â†’ send.",
+"operationId": "AeonPassChatAPIEndPointsPortalConversationsPortalGetConversationWithContactEndPoint",
+"parameters": [
+{
+"name": "contactId",
+"in": "path",
+"required": true,
+"description": "The contactId to open the conversation with. Must be a contact of the API key's organization.",
+"schema": {
+"type": "string",
+"format": "guid"
+}
+},
+{
+"name": "isCreateNew",
+"in": "query",
+"required": true,
+"description": "Create the conversation if it does not exist yet (get-or-create).",
+"schema": {
+"type": "boolean"
+}
+}
+],
+"responses": {
+"200": {
+"description": "The conversation with this contact.",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/ConversationDto"
+}
+}
+}
+},
+"400": {
+"description": "Validation error â€” `errors[].errorCode` is `CONTACT_NOT_SYNCED` (unknown or not-yet-replicated contact) or `CONVERSATION_ACCESS_DENIED` (contact of another organization)."
+},
+"401": {
+"description": "Missing or invalid X-API-KEY."
+},
+"404": {
+"description": "No conversation with this contact yet, and `IsCreateNew` was false."
+},
+"500": {
+"description": "Unexpected error while resolving the conversation."
+}
+},
+"security": [
+{
+"X-API-KEY": []
+}
+]
+}
+},
+"/api/portal/conversations/with-organization/{fromContactId}": {
+"get": {
+"tags": [
+"Portal"
+],
+"summary": "Get the conversation between a contact and the API key's organization.",
+"description": "The portal counterpart of `GET /conversations/with-organization/{OrganizationId}`. That route is\nthe *contact's* entry point â€” it names the organization and resolves the caller's own contact\nrecord from their identity. An API key has no contact identity (it **is** the organization), so\nthe two sides swap: the organization comes from `X-API-KEY` and the contact side is named by\n`FromContactId`.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- Get-only, like the JWT route: no conversation yet returns `404`. Conversations are started by\n  the organization â€” use `POST /portal/conversations`, or\n  `GET /portal/conversations/with-contact/{ContactId}?IsCreateNew=true`.\n- The contact must belong to the API key's organization; one from another organization returns\n  `CONVERSATION_ACCESS_DENIED`.\n- A contactId chat has not replicated yet returns the retryable `CONTACT_NOT_SYNCED` error.\n- The organization is never the caller's to choose: nothing in the request can widen the lookup\n  past the key's own organization.\n- The response is the same conversation shape the other reads return, and `callerRole` is\n  `ORG_MEMBER` â€” an API key always reads as the organization side.",
+"operationId": "AeonPassChatAPIEndPointsPortalConversationsPortalGetConversationWithOrganizationEndPoint",
+"parameters": [
+{
+"name": "fromContactId",
+"in": "path",
+"required": true,
+"description": "The contact whose conversation with the API key's organization to read â€” the \"from\" side of the\nthread. Must be a contact of that organization.",
+"schema": {
+"type": "string",
+"format": "guid"
+}
+}
+],
+"responses": {
+"200": {
+"description": "The conversation between this contact and the API key's organization.",
+"content": {
+"application/json": {
+"schema": {
+"$ref": "#/components/schemas/ConversationDto"
+}
+}
+}
+},
+"400": {
+"description": "Validation error â€” `errors[].errorCode` is `CONTACT_NOT_SYNCED` (unknown or not-yet-replicated contact) or `CONVERSATION_ACCESS_DENIED` (contact of another organization)."
+},
+"401": {
+"description": "Missing or invalid X-API-KEY."
+},
+"404": {
+"description": "No conversation between this contact and the organization yet."
+},
+"500": {
+"description": "Unexpected error while resolving the conversation."
+}
+},
+"security": [
+{
+"X-API-KEY": []
+}
+]
+}
+}
+},
+"components": {
+"schemas": {
+"TwilioWebHookNotificationEndPointRequest": {
+"type": "object",
+"additionalProperties": false,
+"properties": {
+"id": {
+"type": "string",
+"format": "guid"
+},
+"conversationId": {
+"type": "string",
+"format": "guid"
+},
+"senderId": {
+"type": "string",
+"format": "guid"
+},
+"messageBody": {
+"type": "string",
+"nullable": true
+},
+"messageDate": {
+"type": "string",
+"format": "date-time"
+},
+"inApp": {
+"type": "boolean"
+},
+"inSMS": {
+"type": "boolean"
+},
+"inEmail": {
+"type": "boolean"
+},
+"eventId": {
+"type": "string",
+"format": "guid",
+"nullable": true
+},
+"userId": {
+"type": "string",
+"format": "guid",
+"nullable": true
+},
+"inBound": {
+"type": "boolean"
+}
+}
+},
+"PortalPagedResponseOfMessageDto": {
+"type": "object",
+"description": "Standard offset/page-based pagination shape for the portal (API key) surface, so every Portal list\nendpoint returns the same { data, pagination } contract regardless of what shape the underlying\nbusiness-layer response happens to use. Same contract as the AeonPassEvent / AeonPassOrganization\nportal surfaces, so one API consumer sees one pagination shape across all of them.",
+"additionalProperties": false,
+"properties": {
+"data": {
+"type": "array",
+"description": "The items on the requested page. Empty when the page is past the end of the result set.",
+"items": {
+"$ref": "#/components/schemas/MessageDto"
+}
+},
+"pagination": {
+"description": "Where this page sits in the full result set.",
+"oneOf": [
+{
+"$ref": "#/components/schemas/PortalPagination"
+}
+]
+}
+}
+},
+"MessageDto": {
+"type": "object",
+"description": "One message in a conversation. isRead is per-caller; the rest is the stored row plus\nthe sender's display block.",
+"additionalProperties": false,
+"properties": {
+"id": {
+"type": "string",
+"description": "Message id.",
+"format": "guid"
+},
+"conversationId": {
+"type": "string",
+"description": "The conversation this message belongs to.",
+"format": "guid"
+},
+"senderId": {
+"type": "string",
+"description": "Who sent it: the sending user's id on the organization side; on the contact side either the contact's linked user id (app send) or the contactId itself (inbound SMS, which has no user).",
+"format": "guid"
+},
+"messageBody": {
+"type": "string",
+"description": "The message text. Null or empty for an attachment-only message.",
+"nullable": true
+},
+"messageDate": {
+"type": "string",
+"description": "When the message was sent (UTC). Messages are returned newest first, and read receipts compare against this.",
+"format": "date-time"
+},
+"sender": {
+"description": "The sender's display block â€” resolved from users_copy for an organization sender, or the conversation's contact block for a contact sender.",
+"nullable": true,
+"oneOf": [
+{
+"$ref": "#/components/schemas/ConversationParticipantDto"
+}
+]
+},
+"attachments": {
+"type": "array",
+"description": "Files attached to this message. Empty when there are none.",
+"items": {
+"$ref": "#/components/schemas/MessageAttachmentDto"
+}
+},
+"inApp": {
+"type": "boolean",
+"description": "In-app push was requested for this message. Delivery channels only â€” they never affect who can read the message in the API or in the app."
+},
+"inSMS": {
+"type": "boolean",
+"description": "SMS delivery was requested for this message."
+},
+"inEmail": {
+"type": "boolean",
+"description": "Email delivery was requested for this message."
+},
+"isRead": {
+"type": "boolean",
+"description": "Read receipt from the caller's side: for a message the caller sent, true once the other side has read past it; always true for a message the caller received.",
+"nullable": true
+},
+"eventId": {
+"type": "string",
+"description": "The event this message is tagged to, when it was sent in the context of one. Null for an untagged message â€” inbound SMS is always untagged.",
+"format": "guid",
+"nullable": true
+},
+"eventName": {
+"type": "string",
+"description": "Title of the eventId event (events_copy.title), for display. Null when the message is untagged or the event is not in the replica.",
+"nullable": true
+},
+"isFromOrganization": {
+"type": "boolean",
+"description": "True when the organization sent the message, false for the contact's own messages â€” SMS replies\ncaptured from Twilio included. This is what tells the two sides of the thread apart and drives\nmessage alignment in the UI."
+}
+}
+},
+"ConversationParticipantDto": {
+"type": "object",
+"description": "Display shape for a participant on a conversation â€” the contact (via\nconversations.contactid) or an org-side message sender (resolved from\nusers_copy). Not a persisted row: the chat model has no participants table, so this is\npurely a projection for the UI. \"Participant\" (not \"member\") because a conversation has both an\norganization member side and a contact side; isContact tells them apart.",
+"additionalProperties": false,
+"properties": {
+"id": {
+"type": "string",
+"description": "The contact id (contacts_copy.id) for the contact side; null for org-side senders.",
+"format": "guid",
+"nullable": true
+},
+"conversationId": {
+"type": "string",
+"description": "The conversation this participant block belongs to.",
+"format": "guid"
+},
+"firstName": {
+"type": "string",
+"description": "First name â€” the contact's, or the sending user's for an org-side sender.",
+"nullable": true
+},
+"lastName": {
+"type": "string",
+"description": "Last name. Null when not recorded.",
+"nullable": true
+},
+"profilePicture": {
+"type": "string",
+"description": "URL of the profile image. Null when unset.",
+"nullable": true
+},
+"lastReadOn": {
+"type": "string",
+"description": "When this participant last read the conversation (UTC). Populated for the contact block only, and null until they have read it at least once.",
+"format": "date-time",
+"nullable": true
+},
+"userId": {
+"type": "string",
+"description": "The linked user account: the contact's, when they have registered, or the sending user's on the org side. Null for a contact with no account.",
+"format": "guid",
+"nullable": true
+},
+"phone": {
+"type": "string",
+"description": "Phone number, for display.",
+"nullable": true
+},
+"email": {
+"type": "string",
+"description": "Email address, for display.",
+"nullable": true
+},
+"isContact": {
+"type": "boolean",
+"description": "True for the contact (person) side; false for an organization-member side."
+}
+}
+},
+"MessageAttachmentDto": {
+"type": "object",
+"description": "A file attached to a message. The upload endpoint returns this shape before the file belongs to a\nmessage; the same shape comes back on every message once it has been sent.",
+"additionalProperties": false,
+"properties": {
+"id": {
+"type": "string",
+"description": "Attachment id â€” generated at upload time and reused as the attachment's id when the message is sent.",
+"format": "guid"
+},
+"messageId": {
+"type": "string",
+"description": "The message this attachment belongs to. Empty on an upload response, which is not linked to a message yet.",
+"format": "guid"
+},
+"conversationId": {
+"type": "string",
+"description": "The conversation the owning message belongs to. Empty on an upload response.",
+"format": "guid"
+},
+"url": {
+"type": "string",
+"description": "Public URL of the stored file â€” what a client downloads or renders.",
+"nullable": true
+},
+"fileName": {
+"type": "string",
+"description": "Original file name as uploaded, for display and download.",
+"nullable": true
+},
+"fileType": {
+"type": "string",
+"description": "MIME content type of the file, taken from the upload (for example image/png).",
+"nullable": true
+},
+"storageFileName": {
+"type": "string",
+"description": "The name the file is stored under in blob storage ({attachmentId}{extension}) â€” unique, unlike fileName.",
+"nullable": true
+}
+}
+},
+"PortalPagination": {
+"type": "object",
+"description": "Page metadata returned alongside every Portal list result.",
+"additionalProperties": false,
+"properties": {
+"totalCount": {
+"type": "integer",
+"description": "Total items matching the request across all pages.",
+"format": "int32"
+},
+"page": {
+"type": "integer",
+"description": "The page returned, 1-based. Echoes the requested pageNo, or the default when it was omitted or not positive.",
+"format": "int32"
+},
+"pageSize": {
+"type": "integer",
+"description": "Items per page. Echoes the requested pageSize, or the default when it was omitted or not positive.",
+"format": "int32"
+},
+"totalPages": {
+"type": "integer",
+"description": "Number of pages at this page size; 0 when there are no results.",
+"format": "int32"
+}
+}
+},
+"PortalSaveMessageEndPointResponse": {
+"type": "object",
+"description": "The conversation after the send, with lastMessage set to the message just sent.",
+"additionalProperties": false,
+"properties": {
+"id": {
+"type": "string",
+"description": "Conversation id â€” echoes the request's conversationId.",
+"format": "guid"
+},
+"organizationId": {
+"type": "string",
+"description": "The organization that owns the conversation â€” the API key's own.",
+"format": "guid"
+},
+"organizationName": {
+"type": "string",
+"description": "The organization's display name (organizations_copy.organizationname).",
+"nullable": true
+},
+"organizationLogoUrl": {
+"type": "string",
+"description": "The organization's logo URL. Null when none is set.",
+"nullable": true
+},
+"organizationIsSetup": {
+"type": "boolean",
+"description": "Whether the organization has completed setup. Null when the org row is not in the replica yet.",
+"nullable": true
+},
+"organizationEmail": {
+"type": "string",
+"description": "The organization's contact email. Null when unset.",
+"nullable": true
+},
+"organizationPhone": {
+"type": "string",
+"description": "The organization's contact phone. Null when unset.",
+"nullable": true
+},
+"contactId": {
+"type": "string",
+"description": "The contact on the other side of this conversation. The message's recipient on a\nsendFrom=Organization send, and its sender on a sendFrom=Contact one.",
+"format": "guid",
+"nullable": true
+},
+"contact": {
+"description": "The contact's display block (name, avatar, phone/email, linked user, last read).",
+"nullable": true,
+"oneOf": [
+{
+"$ref": "#/components/schemas/ConversationParticipantDto"
+}
+]
+},
+"createdOn": {
+"type": "string",
+"description": "When the conversation was started (UTC).",
+"format": "date-time"
+},
+"updatedOn": {
+"type": "string",
+"description": "Last activity (UTC) â€” this send has just touched it.",
+"format": "date-time",
+"nullable": true
+},
+"isReadByUser": {
+"type": "boolean",
+"description": "Read state of lastMessage, from the organization's seat.\n\nsendFrom=Organization: false immediately after the send â€” it turns true\nonce the contact has read past the message.\nsendFrom=Contact: true. The message is incoming, and an incoming message\nis one you can already see.",
+"nullable": true
+},
+"unreadCount": {
+"type": "integer",
+"description": "Unread messages for the organization owner â€” the acting user behind the API key.\n\nsendFrom=Organization: 0. Sending marks the thread read for the\nsender.\nsendFrom=Contact: not cleared, and normally 1 or more. The message\nis incoming, so it counts against the organization exactly as a real reply does â€” clearing the badge\nhere would hide a message nobody on that side has seen.",
+"format": "int32"
+},
+"lastMessage": {
+"description": "The message that was just sent, with its id, timestamp, attachments and event tag.",
+"nullable": true,
+"oneOf": [
+{
+"$ref": "#/components/schemas/MessageDto"
+}
+]
+}
+}
+},
+"PortalSaveMessageEndPointRequest": {
+"type": "object",
+"description": "A message to send into one of the API key organization's conversations, from either side.",
+"example": {
+"conversationId": "00000000-0000-0000-0000-000000000000",
+"sendFrom": 0,
+"contactId": null,
+"eventId": null,
+"messageBody": "Your table is ready.",
+"attachments": [],
+"inApp": false,
+"inSMS": true,
+"inEmail": false
+},
+"additionalProperties": false,
+"properties": {
+"conversationId": {
+"type": "string",
+"description": "The conversation to send into. Must belong to the API key's organization.",
+"format": "guid"
+},
+"sendFrom": {
+"description": "Which side the message is from: Organization (the default) or Contact. Omit it and the\nmessage is attributed to the organization exactly as before.",
+"oneOf": [
+{
+"$ref": "#/components/schemas/MessageSendFrom"
+}
+]
+},
+"contactId": {
+"type": "string",
+"description": "The contact the message is from. Required when SendFrom is Contact, and must be this\nconversation's own contact, in the API key's organization. Ignored when sending as the organization.",
+"format": "guid",
+"nullable": true
+},
+"eventId": {
+"type": "string",
+"description": "Optional: tag the message to one of the organization's events. An event owned by another organization is rejected.",
+"format": "guid",
+"nullable": true
+},
+"messageBody": {
+"type": "string",
+"description": "The message text. Optional â€” omit it to send attachments only.",
+"nullable": true
+},
+"attachments": {
+"type": "array",
+"description": "Files to attach, using the values returned by upload-docs. Empty by default.",
+"items": {
+"$ref": "#/components/schemas/PortalMessageAttachmentRequest"
+}
+},
+"inApp": {
+"type": "boolean",
+"description": "Deliver as an in-app push. Only reaches contacts who have a registered user account."
+},
+"inSMS": {
+"type": "boolean",
+"description": "Deliver by SMS. This is the channel the contact replies on."
+},
+"inEmail": {
+"type": "boolean",
+"description": "Deliver by email."
+}
+}
+},
+"MessageSendFrom": {
+"type": "string",
+"description": "Which side of an Orgâ†”Contact conversation an outgoing message is attributed to â€” i.e. whose id is\nwritten to messages.senderid, which is what the whole model derives \"which side sent it\" from\n(senderid vs the conversation's contactid / the contact's linked userid).\n\nIt selects the *attribution*, never the *authorization*: the caller still has to be allowed to write\nto the conversation on its own merits. Only the X-API-KEY (organization) surface may choose\n, so an integration can mirror both sides of a thread through one key â€” a\nperson's token has no legitimate use for it (an org member picking it would be impersonating their\nown contact, and a contact already sends as themselves).\n\n\nSerialized by **name** (\"Organization\" / \"Contact\"), not by ordinal: this is a public\nintegration contract, and a magic number in a request body is the kind of thing a caller gets wrong\nsilently. The converter still accepts the numeric form on read, so 0/1 also bind. It is\napplied to this type alone â€” the pre-existing enums on the wire keep the format their consumers\nalready depend on.",
+"x-enumNames": [
+"Organization",
+"Contact"
+],
+"enum": [
+"Organization",
+"Contact"
+]
+},
+"PortalMessageAttachmentRequest": {
+"type": "object",
+"description": "An attachment on an outgoing message â€” the response of POST /portal/conversations/upload-docs, passed back verbatim.",
+"additionalProperties": false,
+"properties": {
+"id": {
+"type": "string",
+"description": "The upload's id. Optional â€” a new id is generated when the attachment is stored either way.",
+"format": "guid",
+"nullable": true
+},
+"fileName": {
+"type": "string",
+"description": "The original file name, for display and download.",
+"nullable": true
+},
+"fileType": {
+"type": "string",
+"description": "MIME content type, so clients can render the attachment.",
+"nullable": true
+},
+"url": {
+"type": "string",
+"description": "Public URL of the uploaded file. Required â€” this is what recipients open."
+},
+"storageFileName": {
+"type": "string",
+"description": "The upload's storageFileName (the blob's unique name).",
+"nullable": true
+}
+}
+},
+"ConversationDto": {
+"type": "object",
+"description": "A conversation between an organization and one of its contacts, rendered for the calling user:\nunreadCount, isReadByUser and lastMessage are all per-caller.",
+"additionalProperties": false,
+"properties": {
+"id": {
+"type": "string",
+"description": "Conversation id â€” the value the send-message, message-list and mark-read endpoints take.",
+"format": "guid"
+},
+"createdOn": {
+"type": "string",
+"description": "When the conversation was started (UTC).",
+"format": "date-time"
+},
+"updatedOn": {
+"type": "string",
+"description": "Last activity (UTC) â€” touched on every send. Null until the first message. Lists are ordered by this, falling back to createdOn.",
+"format": "date-time",
+"nullable": true
+},
+"participants": {
+"type": "array",
+"description": "The conversation's participants: exactly the contact block, or empty when the contact row is missing. Organization-side users are never stored as participants â€” use contact.",
+"items": {
+"$ref": "#/components/schemas/ConversationParticipantDto"
+}
+},
+"isReadByUser": {
+"type": "boolean",
+"description": "Read state of lastMessage from the caller's side â€” the same value as lastMessage.isRead. Null when the conversation has no message the caller can see.",
+"nullable": true
+},
+"unreadCount": {
+"type": "integer",
+"description": "Messages the caller has not read yet: sent by the other side, newer than the caller's last read, and not older than the caller's membership of the organization.",
+"format": "int32"
+},
+"lastMessage": {
+"description": "The most recent message the caller can see, for list previews. Null when nothing has been sent yet.",
+"nullable": true,
+"oneOf": [
+{
+"$ref": "#/components/schemas/MessageDto"
+}
+]
+},
+"recipientUserIds": {
+"type": "array",
+"description": "The contact's linked user id, when they have one; empty otherwise. These are the users a real-time push is addressed to.",
+"items": {
+"type": "string",
+"format": "guid",
+"nullable": true
+}
+},
+"organizationId": {
+"type": "string",
+"description": "The organization that owns the conversation.",
+"format": "guid"
+},
+"organizationName": {
+"type": "string",
+"description": "The owning organization's display name (organizations_copy.organizationname), so the org side can be rendered â€” especially for CONTACT callers â€” without a second lookup.",
+"nullable": true
+},
+"organizationLogoUrl": {
+"type": "string",
+"description": "The owning organization's logo URL (organizations_copy.logourl). Null when the org has no logo set.",
+"nullable": true
+},
+"organizationIsSetup": {
+"type": "boolean",
+"description": "Whether the owning organization has completed setup (organizations_copy.issetup). Null when the org row is not in the replica yet. When false, clients fall back to the owner's identity instead of the org name.",
+"nullable": true
+},
+"organizationEmail": {
+"type": "string",
+"description": "The owning organization's contact email (organizations_copy.email). Null when unset or not replicated yet.",
+"nullable": true
+},
+"organizationPhone": {
+"type": "string",
+"description": "The owning organization's contact phone (organizations_copy.phone). Null when unset or not replicated yet.",
+"nullable": true
+},
+"contactId": {
+"type": "string",
+"description": "The contact this conversation is with. Together with organizationId it identifies the conversation.",
+"format": "guid",
+"nullable": true
+},
+"contact": {
+"description": "The contact's display block (name, avatar, phone/email, linked user, last read).",
+"nullable": true,
+"oneOf": [
+{
+"$ref": "#/components/schemas/ConversationParticipantDto"
+}
+]
+},
+"callerRole": {
+"type": "string",
+"description": "How the caller relates to this conversation: ORG_MEMBER, CONTACT or\nEVENT_MEMBER â€” one list page can mix roles. Always ORG_MEMBER on the X-API-KEY\nsurface. Null when resolved outside a caller context (the anonymous Twilio push).",
+"nullable": true
+}
+}
+},
+"PortalCreateConversationEndpointRequest": {
+"type": "object",
+"description": "Which contact to open a conversation with. The organization is always the API key's own.",
+"additionalProperties": false,
+"properties": {
+"contactId": {
+"type": "string",
+"description": "The contactId to open a conversation with. Must be a contact of the API key's organization.",
+"format": "guid"
+}
+}
+},
+"PortalPagedResponseOfConversationDto": {
+"type": "object",
+"description": "Standard offset/page-based pagination shape for the portal (API key) surface, so every Portal list\nendpoint returns the same { data, pagination } contract regardless of what shape the underlying\nbusiness-layer response happens to use. Same contract as the AeonPassEvent / AeonPassOrganization\nportal surfaces, so one API consumer sees one pagination shape across all of them.",
+"additionalProperties": false,
+"properties": {
+"data": {
+"type": "array",
+"description": "The items on the requested page. Empty when the page is past the end of the result set.",
+"items": {
+"$ref": "#/components/schemas/ConversationDto"
+}
+},
+"pagination": {
+"description": "Where this page sits in the full result set.",
+"oneOf": [
+{
+"$ref": "#/components/schemas/PortalPagination"
+}
+]
+}
+}
+},
+"PortalMarkAsReadConversationEndPointResponse": {
+"type": "object",
+"description": "Confirmation of the read mark that was recorded for the organization side.",
+"additionalProperties": false,
+"properties": {
+"id": {
+"type": "string",
+"description": "The conversation that was marked read.",
+"format": "guid"
+},
+"readDate": {
+"type": "string",
+"description": "The read timestamp recorded (UTC) â€” every message sent up to this instant now counts as read.",
+"format": "date-time"
+}
+}
+},
+"PortalUploadDocsEndPointResponse": {
+"type": "object",
+"description": "One uploaded file. Pass these values straight through as an attachments entry on send-message.",
+"additionalProperties": false,
+"properties": {
+"id": {
+"type": "string",
+"description": "Id assigned to the file. Pass it back as the attachment's id when sending the message.",
+"format": "guid"
+},
+"url": {
+"type": "string",
+"description": "Public URL of the stored file. Required when sending the attachment.",
+"nullable": true
+},
+"fileName": {
+"type": "string",
+"description": "The original file name, echoed from the upload.",
+"nullable": true
+},
+"fileType": {
+"type": "string",
+"description": "MIME content type detected from the upload (for example image/png).",
+"nullable": true
+},
+"storageFileName": {
+"type": "string",
+"description": "The name the file is stored under in blob storage ({id}{extension}) â€” unique, unlike fileName.",
+"nullable": true
+}
+}
+},
+"PortalUploadDocsEndPointRequest": {
+"type": "object",
+"description": "The multipart/form-data body of an attachment upload.",
+"additionalProperties": false,
+"required": [
+"file"
+],
+"properties": {
+"file": {
+"type": "array",
+"description": "The files to upload, as multipart/form-data parts named File. Repeat the field to upload several in one request; at least one is required.",
+"items": {}
+}
+}
+},
+"ContactDto": {
+"type": "object",
+"description": "The person side of a conversation, projected from the contacts_copy replica. Contacts are\nowned by the Organization service; chat only reads them.",
+"additionalProperties": false,
+"properties": {
+"id": {
+"type": "string",
+"description": "Contact id â€” the contactId the conversation endpoints take as their target.",
+"format": "guid"
+},
+"firstName": {
+"type": "string",
+"description": "Contact's first name."
+},
+"lastName": {
+"type": "string",
+"description": "Contact's last name. Null when not recorded.",
+"nullable": true
+},
+"phone": {
+"type": "string",
+"description": "Contact's phone number â€” the SMS delivery address, and the first key a guest is matched on.",
+"nullable": true
+},
+"email": {
+"type": "string",
+"description": "Contact's email address â€” the email delivery address, and the fallback guest match key (case-insensitive).",
+"nullable": true
+},
+"userId": {
+"type": "string",
+"description": "The AeonPass user account linked to this contact. Null when they have never registered â€” such a contact is reachable by SMS/email only, never by in-app push.",
+"format": "guid",
+"nullable": true
+},
+"profilePicture": {
+"type": "string",
+"description": "URL of the contact's profile image (contacts_copy.profileurl). Null when unset.",
+"nullable": true
+},
+"organizationId": {
+"type": "string",
+"description": "The organization this contact belongs to. A conversation is identified by (organization, contact).",
+"format": "guid"
+}
+}
+},
+"PaginationResultOfMessageDto": {
+"type": "object",
+"additionalProperties": false,
+"properties": {
+"list": {
+"type": "array",
+"items": {
+"$ref": "#/components/schemas/MessageDto"
+}
+},
+"totalCount": {
+"type": "integer",
+"format": "int32"
+}
+}
+},
+"SaveMessageEndPointResponse": {
+"type": "object",
+"additionalProperties": false,
+"properties": {
+"id": {
+"type": "string",
+"format": "guid"
+},
+"organizationId": {
+"type": "string",
+"format": "guid"
+},
+"organizationName": {
+"type": "string",
+"nullable": true
+},
+"organizationLogoUrl": {
+"type": "string",
+"nullable": true
+},
+"organizationIsSetup": {
+"type": "boolean",
+"nullable": true
+},
+"organizationEmail": {
+"type": "string",
+"nullable": true
+},
+"organizationPhone": {
+"type": "string",
+"nullable": true
+},
+"eventId": {
+"type": "string",
+"format": "guid",
+"nullable": true
+},
+"eventName": {
+"type": "string",
+"nullable": true
+},
+"createdOn": {
+"type": "string",
+"format": "date-time"
+},
+"updatedOn": {
+"type": "string",
+"format": "date-time",
+"nullable": true
+},
+"participants": {
+"type": "array",
+"items": {
+"$ref": "#/components/schemas/ConversationParticipantDto"
+}
+},
+"isReadByUser": {
+"type": "boolean",
+"nullable": true
+},
+"unreadCount": {
+"type": "integer",
+"format": "int32"
+},
+"lastMessage": {
+"nullable": true,
+"oneOf": [
+{
+"$ref": "#/components/schemas/MessageDto"
+}
+]
+}
+}
+},
+"SaveMessageEndPointRequest": {
+"type": "object",
+"additionalProperties": false,
+"properties": {
+"conversationId": {
+"type": "string",
+"format": "guid"
+},
+"eventId": {
+"type": "string",
+"format": "guid",
+"nullable": true
+},
+"messageBody": {
+"type": "string",
+"nullable": true
+},
+"attachments": {
+"type": "array",
+"items": {
+"$ref": "#/components/schemas/MessageCommandAttachmentRequest"
+}
+},
+"inApp": {
+"type": "boolean"
+},
+"inSMS": {
+"type": "boolean"
+},
+"inEmail": {
+"type": "boolean"
+}
+}
+},
+"MessageCommandAttachmentRequest": {
+"type": "object",
+"additionalProperties": false,
+"properties": {
+"id": {
+"type": "string",
+"format": "guid",
+"nullable": true
+},
+"fileName": {
+"type": "string",
+"nullable": true
+},
+"fileType": {
+"type": "string",
+"nullable": true
+},
+"url": {
+"type": "string"
+},
+"storageFileName": {
+"type": "string",
+"nullable": true
+}
+}
+},
+"CreateConversationEndpointRequest": {
+"type": "object",
+"additionalProperties": false,
+"properties": {
+"targetId": {
+"type": "string",
+"description": "The contactId to open a conversation with.",
+"format": "guid"
+},
+"organizationId": {
+"type": "string",
+"description": "Org-member path: the caller's organization â€” must match the token org and the contact's\n            org. Optional; defaults to the token org when omitted. Ignored on the direct-event path.",
+"format": "guid",
+"nullable": true
+},
+"eventId": {
+"type": "string",
+"description": "Direct-event path (doc 16): the event the caller can manage. When set and the caller is\n            not an org member, the conversation's org is derived from this event.",
+"format": "guid",
+"nullable": true
+}
+}
+},
+"MarkAsReadConversationEndPointResponse": {
+"type": "object",
+"additionalProperties": false,
+"properties": {
+"id": {
+"type": "string",
+"format": "guid"
+},
+"readDate": {
+"type": "string",
+"format": "date-time"
+}
+}
+},
+"UploadDocsEndPointResponse": {
+"type": "object",
+"additionalProperties": false,
+"properties": {
+"id": {
+"type": "string",
+"format": "guid"
+},
+"url": {
+"type": "string",
+"nullable": true
+},
+"fileName": {
+"type": "string",
+"nullable": true
+},
+"fileType": {
+"type": "string",
+"nullable": true
+},
+"storageFileName": {
+"type": "string",
+"nullable": true
+}
+}
+},
+"UploadDocsEndPointRequest": {
+"type": "object",
+"additionalProperties": false,
+"required": [
+"file"
+],
+"properties": {
+"file": {
+"type": "array",
+"items": {}
+}
+}
+},
+"PaginationResultOfConversationDto": {
+"type": "object",
+"additionalProperties": false,
+"properties": {
+"list": {
+"type": "array",
+"items": {
+"$ref": "#/components/schemas/ConversationDto"
+}
+},
+"totalCount": {
+"type": "integer",
+"format": "int32"
+}
+}
+}
+},
+"securitySchemes": {
+"JWTBearerAuth": {
+"type": "http",
+"description": "Enter a JWT token to authorize the requests...",
+"scheme": "Bearer",
+"bearerFormat": "JWT"
+},
+"X-API-KEY": {
+"type": "apiKey",
+"description": "Per-organization API key for the portal/integration endpoints. Include as the `X-API-KEY` request header.",
+"name": "X-API-KEY",
+"in": "header"
+}
+}
+},
+"tags": [
+{
+"name": "Realtime (SignalR)",
+"description": "The `/portal/chat` WebSocket hub, which pushes conversation updates\nto API-key consumers. It raises two serverâ†’client events (`ReceiveMessage`, `MarkMessagesRead`)\nand accepts no client calls â€” sending always stays on the HTTP endpoints.\n\n**How do I connect?**\n\n| I am | Credential | Subscribed to |\n| --- | --- | --- |\n| An integration watching a whole organization | `X-API-KEY` header, or `?apikey=` | every conversation of the key's organization |\n| A contact-facing surface, for a person who may have **no** account | the same key **plus** `?contactId=` | that one contact's thread |\n\nDocumentation only â€” this path cannot be called from Swagger UI."
+},
+{
+"name": "Portal",
+"description": "Integration API for a whole organization, authenticated by a per-organization\n`X-API-KEY` header rather than a user's token. These are a second\ndoor onto the same conversations the apps use â€” not a separate store â€” so anything written here\nappears in the web and member apps immediately, and vice versa.\n\n**The organization is never a parameter.** It is resolved from the key, and no request body or\nquery accepts an `organizationId`. Every id you pass is checked against the key's organization, so\na conversation, contact or event belonging to another one is rejected rather than silently ignored.\n\n**Both sides of a conversation are reachable through one key.** A conversation is the pair\n(organization, contact) and holds nothing else. By default you act as the organization; `sendFrom`\non the send endpoint lets you record a message **from** the contact instead â€” for a person who may\nhave no AeonPass account at all â€” and `?contactId=` on the realtime hub subscribes to that one\ncontact's thread. See `POST /portal/conversations/send-message` and the **Realtime (SignalR)**\ngroup.\n\n**The usual order of calls**\n\n| # | Call | Why |\n|---|---|---|\n| 1 | `GET /portal/conversations/contact/{guestId}` | event guest id â†’ `contactId`. Skip it if you already hold one |\n| 2 | `GET /portal/conversations/with-contact/{contactId}?IsCreateNew=true` | get-or-create the thread in one call â€” the usual entry point |\n| 3 | `POST /portal/conversations/upload-docs` | only if the message carries attachments |\n| 4 | `POST /portal/conversations/send-message` | send, as either side |\n| 5 | `GET /portal/conversations/{id}/messages` | page the thread; or subscribe to the hub and skip polling |\n\n**Conventions across the surface**\n\n- Lists return `{ data, pagination }` with `PageNo` / `PageSize` (defaults `1` / `100`) â€” the same\n  shape the other services' portal APIs use.\n- Errors carry a machine-readable `errors[].errorCode`. Branch on that, not on the message text.\n  `CONTACT_NOT_SYNCED` is the one worth retrying: contacts replicate from the Organization service\n  within seconds. `CONVERSATION_ACCESS_DENIED` and `ORGANIZATION_ID_MISMATCH` mean the id belongs\n  to another organization and will never succeed.\n- `callerRole` is always `ORG_MEMBER` here, and unread counts and read flags are always the\n  **organization's** â€” computed for the organization owner, who is the acting user behind a key.\n- Reads and writes through this API share one read state with the apps, so marking a thread read\n  here clears the owner's badge there too."
+}
+]
+}

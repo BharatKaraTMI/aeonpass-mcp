@@ -2,6 +2,8 @@
 // stdio transport — used by Claude Code and the Claude desktop app (config file).
 // Unchanged behaviour: the key comes from the environment.
 
+// First import: populates process.env from .env before anything reads it.
+import "./env.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createClient } from "./api.js";
 import { createServer } from "./server.js";

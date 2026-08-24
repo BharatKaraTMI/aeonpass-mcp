@@ -159,9 +159,71 @@ Two things cost real debugging time; both are load-bearing:
 | `send_message_to_contacts` | Message contacts via InApp / SMS / Email |
 | `upload_contacts` | Bulk upsert contacts from a list |
 
-> `send_invite`, `send_message_to_guests`, and `send_message_to_contacts` reach
-> real people over SMS and email, and `sendToAll` is not scoped. Treat them as
-> destructive.
+### Messaging
+
+Threaded 1:1 chat between the organization and one of its contacts — the chat
+service's `/api/portal/conversations/*` surface. Distinct from the broadcast
+`send_message_to_*` tools above: a conversation persists and the contact can
+reply into it, by SMS if they have no account.
+
+| Tool | Description |
+|------|-------------|
+| `list_conversations` | List the organization's conversations (paginated) |
+| `get_conversation` | Get one conversation with contact, last message, unread count |
+| `create_conversation` | Open the conversation with a contact (get-or-create) |
+| `get_conversation_with_contact` | Same, addressed by contactId — the usual entry point |
+| `get_contact_by_guest` | Resolve an event guest ID to a contactId |
+| `list_messages` | Page a conversation's messages, both sides (paginated) |
+| `send_conversation_message` | Send into a conversation, from either side, via InApp / SMS / Email |
+| `mark_conversation_read` | Mark a conversation read on the organization side |
+| `upload_conversation_docs` | Upload attachments, returns URLs for the next send |
+| `get_chat_hub_info` | Connection details for the realtime SignalR hub |
+
+The usual flow is guest ID → `get_contact_by_guest` →
+`get_conversation_with_contact` with `isCreateNew: true` →
+`send_conversation_message`.
+
+#### Sending as the contact
+
+`send_conversation_message` takes `sendFrom`: `Organization` (the default) or
+`Contact`. `Contact` records the message as the contact's own, the way an
+inbound SMS reply is stored — `isFromOrganization: false`, `senderId` is the
+contactId, and the organization's unread count goes up. It needs `contactId`,
+which must be that conversation's own contact, and the delivery channels then
+dispatch **nothing**: they describe how to reach the contact, so they only mean
+anything when the organization is the sender.
+
+That lets one key mirror both halves of a thread — an integration owning a
+contact-facing surface can record replies for someone with no Aeon Pass account.
+It changes attribution only; the key still has to be allowed to write to the
+conversation.
+
+#### The realtime hub
+
+`get_chat_hub_info` is the one tool that makes no API call. `GET /api/portal/chat`
+is a SignalR WebSocket handshake, and a persistent socket cannot live inside a
+stateless per-request MCP server — so the tool returns the hub URL, how to
+authenticate, what the connection is subscribed to, and the two server-to-client
+events, and you connect with your own SignalR client. Your key is never included
+in the response.
+
+Pass `contactId` for a connection scoped to that contact's single thread
+(`contact-{contactId}`) instead of the whole organization (`org-{organizationId}`).
+The contact scope replaces the organization group rather than adding to it,
+which is what makes it safe to put in front of a contact — for both views, open
+two connections. A `contactId` that is not yours fails the handshake with 401
+rather than quietly falling back to the organization-wide feed.
+
+The URL comes back as `https://`, not `wss://`: hand it to `withUrl()` as-is and
+the SignalR client negotiates the WebSocket upgrade itself. A `wss://` URL is
+rejected outright with "Cannot resolve".
+
+> `send_invite`, `send_message_to_guests`, `send_message_to_contacts`, and
+> `send_conversation_message` reach real people over SMS and email, and
+> `sendToAll` is not scoped. Treat them as destructive.
+>
+> `mark_conversation_read` is not read-only either: it writes the same read
+> state the organization owner sees in the web app, clearing their badge.
 
 ### Techaeon Status Codes
 
@@ -205,7 +267,7 @@ claude mcp add --scope project aeonpass-dev -- node "$(pwd)/dist/index.js"
 
 That needs `AEONPASS_API_KEY` in your environment, since stdio reads the key
 from there. Remove it when you're done — running it alongside the hosted
-`aeonpass` server means two copies of all 25 tools, which measurably degrades
+`aeonpass` server means two copies of all 35 tools, which measurably degrades
 tool selection.
 
 ```bash
@@ -220,6 +282,29 @@ npm run serve       # HTTP mode (compiled)
 `X-API-KEY` header, so local runs behave as they always have. That fallback is
 deliberately unavailable to the hosted entrypoints.
 
+### Configuration
+
+Copy `.env.example` to `.env`. The Node entrypoints read it on startup — no
+dotenv dependency, just Node's own `process.loadEnvFile`. It's looked for at the
+package root first, so the stdio server finds it whichever directory your MCP
+client launches it from, then in the cwd. Variables already set in the real
+environment take precedence over the file.
+
+| Variable | Required | Default | Purpose |
+|----------|----------|---------|---------|
+| `AEONPASS_API_KEY` | stdio only | — | Your key. Over HTTP callers send `X-API-KEY` instead; `npm run serve` falls back to this locally. Leave it unset when deploying. |
+| `AEONPASS_BASE_URL` | no | prod gateway | Gateway origin — point it at staging or a local gateway. |
+| `PORT` | no | `47821` | HTTP entrypoint listen port. |
+
+```bash
+AEONPASS_BASE_URL=https://staging-gateway.example.com npm run dev:http
+```
+
+Only the origin of `AEONPASS_BASE_URL` is used; request paths are absolute, so
+any path you include is ignored. A value that isn't a valid http(s) URL fails at
+startup with a message naming the variable. On Vercel or Workers, set it as a
+normal platform environment variable — those hosts have no `.env` to read.
+
 ### Keeping up with the API
 
 ```bash
@@ -227,7 +312,7 @@ npm run check:api             # what moved since the last snapshot
 npm run check:api -- --write  # refresh specs/*.json once handled
 ```
 
-`info.version` is `1.0.0` on all three Aeon Pass specs and has **not moved**
+`info.version` is `1.0.0` on all four Aeon Pass specs and has **not moved**
 through a full path restructure (`/api/techaeon/public` → `/api/portal/techaeon`),
 a change to every list response shape, and the addition of `PATCH /guest/{id}`.
 So the version field can't tell you anything. Instead, `specs/*.json` holds a
@@ -240,12 +325,22 @@ reporting:
 - `! UNIMPLEMENTED` — in the spec, no client method
 - `! STALE` — a client method whose endpoint no longer exists
 
+`specs/message.json` is **held**. The published chat spec is still the
+pre-portal, JWT-only surface — it has no `/api/portal/conversations/*` in it at
+all — so the snapshot is the dev spec that does (`doc/dev-messageAPI.json`), and
+`check:api` compares coverage against that instead of diffing it away. `--write`
+leaves it alone. The check says so on every run, and tells you to drop
+`holdUntil` from `SPECS` the day the published spec catches up. The JWT surface
+itself (`/api/conversations/*`, `/api/chat`, the Twilio webhook) is in
+`SKIPPED_SURFACES`: it authenticates an end user's session, and this server only
+ever holds an API key.
+
 A GitHub Action runs it weekly, and on any PR touching `specs/`, `src/api.ts`,
 or the script. Adding an endpoint means: implement it in `createClient`
 (`src/api.ts`), register the tool in `src/server.ts`, then add the operation to
 `COVERED` in `scripts/check-api.mjs`.
 
-`GET /contact/{orgId}/export` is deliberately **not** exposed — it returns a CSV
+`GET /contact/export` is deliberately **not** exposed — it returns a CSV
 of every contact, which is a large PII dump into an LLM context. `list_contacts`
 covers paged reads. It's listed in `SKIPPED` so the check doesn't flag it.
 
@@ -254,9 +349,10 @@ key is a parameter rather than a module-level env read, so each entrypoint
 decides where it comes from:
 
 ```
-src/api.ts     createClient(apiKey) → the 25 API calls, bound to that key
+src/api.ts     createClient(apiKey) → the 36 API calls, bound to that key
 src/server.ts  createServer(client) → registers the tools
 src/app.ts     Hono app; reads X-API-KEY per request
+src/env.ts     loads .env into process.env (Node entrypoints only)
 src/index.ts   stdio      → key from AEONPASS_API_KEY
 src/node.ts    Node HTTP  → header, falling back to env for local runs
 api/index.ts   Vercel     → header only, no fallback

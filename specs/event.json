@@ -925,7 +925,7 @@
       "PortalInviteGuestEndPointRequest": {
         "type": "object",
         "example": {
-          "eventId": "8f400d0a-7f0b-4b0d-bca0-0463e1b6b471",
+          "eventId": "ecb3ceb0-5529-4d38-af0a-d5d29338faf8",
           "sendToAll": false,
           "guestIds": [],
           "inviteMessageTemplate": "Invite message template"
@@ -960,8 +960,7 @@
       "PortalSendMessageToGuestEndPointRequest": {
         "type": "object",
         "example": {
-          "eventId": "bcc24655-b159-4bd9-aa37-a0434df83772",
-          "designMappingId": null,
+          "eventId": "f80e4e8f-ead1-4299-b025-9a7ab1af8f44",
           "guestIds": [],
           "messageBody": "",
           "typeIds": null,
@@ -976,11 +975,6 @@
             "type": "string",
             "format": "guid",
             "minLength": 1
-          },
-          "designMappingId": {
-            "type": "string",
-            "format": "guid",
-            "nullable": true
           },
           "guestIds": {
             "type": "array",

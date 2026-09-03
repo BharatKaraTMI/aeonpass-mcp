@@ -169,12 +169,12 @@ Two-way conversations between your organization and its contacts.
 
 | Tool | Description |
 |------|-------------|
-| `list_conversations` | List conversations (paginated, unread-only filter) |
+| `list_conversations` | List conversations (paginated, unread-only and contact filters) |
 | `get_conversation` | Get one conversation by ID |
 | `get_conversation_with_contact` | Get-or-create the thread with a contact |
 | `create_conversation` | Start a conversation with a contact |
 | `list_messages` | List a conversation's messages (paginated, event filter) |
-| `send_chat_message` | Send into a conversation |
+| `send_chat_message` | Send into a conversation, as the org or as the contact |
 | `mark_conversation_read` | Clear the unread count |
 | `get_contact_by_guest` | Resolve an event guest ID to its contact |
 | `upload_message_attachments` | Upload files to attach to a message |
@@ -182,11 +182,42 @@ Two-way conversations between your organization and its contacts.
 > `send_chat_message` reaches real people whenever `inApp`, `inSMS`, or
 > `inEmail` is set. Treat it as destructive.
 
-Two things worth knowing. `send_chat_message` takes `sendFrom: "Contact"`, which
-records a message as coming from the contact the way an inbound SMS reply is
-stored — that dispatches **nothing** to them, since the channel flags describe
-how to *reach* a contact. And `mark_conversation_read` always records the
-organization as the reader; there is no contact-side mark-read on this surface.
+Four things worth knowing.
+
+`send_chat_message` **requires** `sendFrom` — `"Organization"` or `"Contact"`.
+It used to default to `"Organization"`; it no longer does, because a key may
+record either side, so there is no side to infer and a request without one is
+rejected before any other validation runs. `sendFrom: "Contact"` records a
+message as coming from the contact the way an inbound SMS reply is stored — that
+dispatches **nothing** to them, since the channel flags describe how to *reach*
+a contact, and it raises the organization's unread count instead of clearing it.
+
+When you read a thread, tell the two sides apart with `isFromOrganization`,
+never by matching `senderId` against a contactId. `senderId` is the contact's id
+on an SMS reply and on a `sendFrom: "Contact"` send, but their *user* id when
+they sent from their own app.
+
+`mark_conversation_read` always records the organization as the reader; there is
+no contact-side mark-read on this surface. Until API-key management ships a key
+acts as the organization's owner account, so it also clears the badge that owner
+sees in the web app — the API and the app share one read state.
+
+And the three reads — `list_conversations`, `get_conversation`, `list_messages`
+— take an optional `view` (`Auto` | `Organization` | `Contact`), which seat the
+result is reported from. It sets `callerRole` and nothing else: the rows are the
+same either way, because a key reads the thread as the organization whatever it
+sends, so the unread count and read receipts are always the organization's.
+Omitting it is the same as `Organization`. On `get_conversation`, `Contact`
+reports the thread's own contact's seat. On `list_conversations` it **requires
+`contactId`** and returns that one conversation — without it you get
+`CONTACT_ID_REQUIRED`. On `list_messages` it does nothing at all, and is
+accepted only so you can pass the same value you sent to `get_conversation`.
+
+`list_conversations` also takes `contactId` on its own, as a plain filter for one
+contact's thread. `get_conversation_with_contact` is usually the better route
+there — it returns the conversation directly and can create it. And reading from
+the contact's seat is not the same as *recording a message as* the contact; that
+is `send_chat_message` with `sendFrom: "Contact"`.
 
 ### Chat realtime (SignalR)
 

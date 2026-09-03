@@ -128,15 +128,68 @@ All tools call the Aeon Pass gateway at `https://apv2-gatewayapp-prod-westus3.az
 **Chat (Message API)**
 | Tool | Description |
 |------|-------------|
-| `list_conversations` | List the org's conversations (paginated, unread filter) |
+| `list_conversations` | List the org's conversations (paginated, unread + contact filters) |
 | `get_conversation` | Get one conversation by ID |
 | `get_conversation_with_contact` | Get-or-create the thread with a contact |
 | `create_conversation` | Start a conversation with a contact |
 | `list_messages` | List a conversation's messages (paginated, event filter) |
-| `send_chat_message` | Send into a conversation, as the org or as the contact |
+| `send_chat_message` | Send into a conversation — `sendFrom` required, org or contact |
 | `mark_conversation_read` | Mark read — always as the *organization* |
 | `get_contact_by_guest` | Resolve an event guest ID to its contact |
 | `upload_message_attachments` | Upload files for use as chat attachments |
+
+`send_chat_message` **requires** `sendFrom`. It used to default to
+`Organization`; the API-key surface now rejects a request without it at request
+binding, before any of the endpoint's own validation. The reason is that a key
+may record *either* side — it is org-side by construction, so `Contact` selects
+attribution, not authorization — which leaves no side to infer. (The token
+surface keeps it nullable, where null still means "infer from the caller", but
+this server only speaks portal.) So `sendFrom` is a required parameter on the
+tool and `createClient` does not default it, and `callMeta` logs the value the
+caller actually sent rather than a phantom `Organization`.
+
+Two more things about `send_chat_message`, both settled on stage in Sept 2026.
+`eventId` is now **validated before anything is stored** — an unknown id, a
+deleted one, or another organization's event all fail with `EVENT_NOT_LINKED`,
+where previously any GUID was accepted and kept as a tag that never resolved to
+an `eventName`. `ORGANIZATION_ID_MISMATCH` no longer covers `eventId` as a
+result; it is about `contactId` only. Separately, a send with **every channel
+flag off** is deliberately not an error: the message is stored and pushed to
+live subscribers but dispatched to nobody, and the `200` is identical to a
+delivered send apart from the `inApp`/`inSMS`/`inEmail` echoed on `lastMessage`.
+That is documented rather than guarded, so the tool description carries the
+warning — set a channel on anything meant to reach the person.
+
+The three conversation *reads* — `list_conversations`, `get_conversation`,
+`list_messages` — take a `view` query parameter (`ConversationSide`: `Auto` |
+`Organization` | `Contact`). **It sets `callerRole` and nothing else.**
+`Organization` and `Auto` report `ORG_MEMBER`, `Contact` reports `CONTACT`, and
+the rows are identical either way: a key reads the thread as the organization on
+every value, so `unreadCount`, `isReadByUser` and `isRead` are always the
+organization's. It is not an access switch, and it cannot reach anything the key
+could not already reach.
+
+Per endpoint:
+
+| Read | `view` |
+|---|---|
+| `get_conversation` | `Contact` reports the thread's own contact's seat. Needs no id — a conversation has exactly one contact. |
+| `list_conversations` | `Contact` **requires `contactId`** and returns that one conversation; without it, `400 CONTACT_ID_REQUIRED`. |
+| `list_messages` | A no-op, accepted only so the same value can be passed as to `get_conversation`. A message has no `callerRole`. |
+
+`contactId` on `list_conversations` is also a filter in its own right, with no
+`view`: keep only the conversation with that contact. A contact of another
+organization matches nothing and returns an empty page rather than an error —
+consistent with every other org-scoped read here. `get_conversation_with_contact`
+remains the better route to a known contact's thread; it returns the conversation
+directly and can create it, where this only filters.
+
+`createClient` sends `view` only when a caller passes one. `Auto` is the API's
+default *and* its zero value, meaning "infer the side as before", so a bare call
+stays byte-identical to the pre-`view` request.
+
+`view` also accepts the short spelling `org`, and its query-string converter
+never fails, so a bad value silently becomes `Auto`. We send the canonical name.
 
 **Chat realtime (SignalR)** — stdio and `npm run serve` only, see above
 | Tool | Description |
@@ -187,6 +240,13 @@ side, and note it is sender-neutral, so **your own sends echo back**; reconcile
 on `lastMessage.id`. `MarkMessagesRead` is a read receipt — branch on
 `readByContact` for the direction rather than assuming one.
 
+Never tell the sides apart by matching `senderId` against a contactId.
+`isFromOrganization` is recorded on the message itself, while `senderId` holds
+the contact's id on an SMS reply and on a `sendFrom: "Contact"` send but their
+*user* id when they sent from their own app — so the comparison is wrong for the
+third case, and wrong again when the contact is linked to the same user account
+the key acts as.
+
 SignalR replays nothing across a reconnect, so `status.reconnects > 0` or
 `status.dropped > 0` both mean events were missed. `list_messages` is the
 reconciliation path; the buffer alone is not a source of truth.
@@ -207,6 +267,28 @@ GitHub Action runs it.
 The `message` spec's `GET /api/portal/chat` is the SignalR hub, documented as a
 GET only so it appears in the reference. It maps to `realtime.ts` in `COVERED`,
 not to a `createClient` method.
+
+**Two spec sources, and they lag each other.** `check:api` reads the published
+specs from `aeonpass-dev-portal.vercel.app/api/specs/{name}`; each gateway
+environment also serves the spec its own build generated, e.g.
+`…-stage-….azurewebsites.net/swagger/docs/v1/messageAPI` (the swagger UI's
+config block lists all six). The gateway spec is what the deployed code
+actually does, and it moves first — the `sendFrom` requirement above was live on
+stage while the published spec still described the old optional field. So the
+drift check passing does not mean there is nothing to pick up; check the
+environment's own swagger when chasing a specific change.
+
+> **`specs/message.json` is currently a gateway snapshot, not a published one.**
+> It was regenerated from the stage swagger — filtered to `/api/portal` and the
+> schemas those paths reach, which is the same shape the publisher serves — so
+> that the committed contract matches the code, which implements `sendFrom`
+> required, `view`, `contactId` and `EVENT_NOT_LINKED`. The published spec has
+> none of those yet, so `check:api` reports
+> `~ message: same operations, but the spec body changed` until it catches up. **Do not clear that line with `check:api -- --write`** —
+> it fetches the published source and would revert the snapshot to the old
+> contract. Once the publisher catches up, `--write` is safe again and the line
+> goes away on its own. The other three snapshots do come from the published
+> source; refresh those with `--write` as usual.
 
 Adding an endpoint: implement in `createClient` (`api.ts`) → register the tool
 (`server.ts`) → add the operation to `COVERED` in `scripts/check-api.mjs`.

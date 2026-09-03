@@ -497,7 +497,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "list_conversations",
-    "List the organization's chat conversations, newest activity first. Returns { data: [...], pagination: { totalCount, page, pageSize, totalPages } }. Each conversation carries its contact, lastMessage, unreadCount, and isReadByUser.",
+    "List the organization's chat conversations, newest activity first. Returns { data: [...], pagination: { totalCount, page, pageSize, totalPages } }. Each conversation carries its contact, lastMessage, unreadCount, and isReadByUser. unreadCount is the organization's and spans the whole thread — the app's 'since you joined' cutoff needs a membership row, which an API key's identity does not have. lastMessage is null on a thread with no messages yet. To reach one known contact's thread prefer get_conversation_with_contact, which returns it directly and can create it; contactId here only filters an existing list.",
     {
       pageNo: z.number().optional().describe("Page number (1-based, default 1)"),
       pageSize: z.number().optional().describe("Results per page (default 100)"),
@@ -506,6 +506,18 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
         .optional()
         .describe("Matches either side: contact name/email/phone, or the organization's"),
       isUnreadOnly: z.boolean().optional().describe("Only conversations with a non-zero unread count"),
+      contactId: z
+        .string()
+        .optional()
+        .describe(
+          "Keep only the conversation with this contact. A contact of another organization matches nothing and returns an empty page rather than an error. Required when view='Contact'."
+        ),
+      view: z
+        .enum(["Auto", "Organization", "Contact"])
+        .optional()
+        .describe(
+          "Which seat each row is reported from — it sets callerRole and nothing else. Omit it (the API default, Auto) or pass Organization for callerRole 'ORG_MEMBER'. 'Contact' REQUIRES contactId and returns that one contact's conversation with callerRole 'CONTACT'; without contactId it fails with CONTACT_ID_REQUIRED. The unread count and read receipts are the organization's on every value, since that is the side the key acts as."
+        ),
     },
     async (params) => ({
       content: [{ type: "text", text: JSON.stringify(await client.listConversations(params), null, 2) }],
@@ -514,16 +526,24 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "get_conversation",
-    "Get one conversation by ID, including its participants, last message, and current unread count. Must belong to your organization.",
-    { id: z.string().describe("Conversation GUID") },
-    async ({ id }) => ({
-      content: [{ type: "text", text: JSON.stringify(await client.getConversation(id), null, 2) }],
+    "Get one conversation by ID, including its participants, last message, and current unread count. Must belong to your organization. unreadCount is the organization's view and counts either side, so a message recorded with sendFrom='Contact' raises it rather than clearing it. isReadByUser says whether the CONTACT has read your last message; it stays false on a thread whose contact has no registered account, since they have no way to record a read.",
+    {
+      id: z.string().describe("Conversation GUID"),
+      view: z
+        .enum(["Auto", "Organization", "Contact"])
+        .optional()
+        .describe(
+          "Which seat the conversation is reported from — it sets callerRole and nothing else. Omit it (the API default, Auto) or pass Organization for 'ORG_MEMBER'; 'Contact' reports 'CONTACT' for the thread's own contact and needs no id. Every other field, unreadCount and isReadByUser included, is the organization's on every value, since that is the side the key reads as. Reading from the contact's seat is not the same as recording a message AS the contact — that is send_chat_message with sendFrom='Contact'."
+        ),
+    },
+    async ({ id, view }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.getConversation(id, view), null, 2) }],
     })
   );
 
   server.tool(
     "get_conversation_with_contact",
-    "Get the conversation with a specific contact, optionally creating it if none exists yet (get-or-create). Prefer this over create_conversation when you just want the thread.",
+    "Get the conversation with a specific contact, optionally creating it if none exists yet (get-or-create). This is the usual entry point: guest id → get_contact_by_guest → this call with isCreateNew=true → send. With isCreateNew=false and no thread yet the API answers 404 — that is the documented contract, not a failure, so treat it as 'no conversation' rather than an error.",
     {
       contactId: z.string().describe("Contact GUID — must be a contact of your organization"),
       isCreateNew: z
@@ -542,7 +562,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "create_conversation",
-    "Start a new conversation with a contact. If a thread with that contact may already exist, use get_conversation_with_contact instead.",
+    "Open the conversation with a contact. Get-or-create, not create-only: a conversation is identified by (organization, contact), so calling this for a contact that already has a thread returns the existing one rather than creating a duplicate. get_conversation_with_contact does the same job and can also be used get-only, so prefer it when you may just want to look the thread up.",
     { contactId: z.string().describe("Contact GUID — must be a contact of your organization") },
     async ({ contactId }) => ({
       content: [{ type: "text", text: JSON.stringify(await client.createConversation(contactId), null, 2) }],
@@ -551,7 +571,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "list_messages",
-    "List a conversation's messages, paginated. Branch on each message's isFromOrganization to tell which side sent it. Returns { data: [...], pagination: {...} }.",
+    "List a conversation's messages, paginated. Branch on isFromOrganization to tell the two sides apart — it is recorded when the message is sent. Do NOT infer the side by comparing senderId against a contactId: senderId holds the contact's id on an SMS reply or a sendFrom='Contact' send, but their user id when they sent from their own app. Render from the sender block. isRead is the organization's receipt: messages from the contact are always true, and one you sent turns true once they read past it — it stays false indefinitely for a contact with no registered account, which is not a delivery failure. Returns { data: [...], pagination: {...} }.",
     {
       conversationId: z.string().describe("Conversation GUID"),
       eventId: z
@@ -561,6 +581,12 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
       pageNo: z.number().optional().describe("Page number (1-based, default 1)"),
       pageSize: z.number().optional().describe("Messages per page (default 100)"),
       searchTerm: z.string().optional().describe("Case-insensitive substring match on the message body"),
+      view: z
+        .enum(["Auto", "Organization", "Contact"])
+        .optional()
+        .describe(
+          "Accepted only so you can pass the same value you sent to get_conversation. A message carries no callerRole of its own, so every value returns the identical page and isRead is the organization's receipt throughout. Omitting it is fine; it filters nothing."
+        ),
     },
     async ({ conversationId, ...params }) => ({
       content: [
@@ -571,19 +597,25 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "send_chat_message",
-    "Send a message into a conversation. By default it is attributed to the organization and delivered on whichever of inApp/inSMS/inEmail you enable. Set sendFrom='Contact' (with contactId) to record a message as coming from the contact, the way an inbound SMS reply is stored — that dispatches nothing to them, since the channel flags describe how to reach the contact.",
+    "Send a message into a conversation. sendFrom is required and says which side the message is from — there is no default, and omitting it is rejected. sendFrom='Organization' is the normal case: it delivers on whichever of inApp/inSMS/inEmail you enable. sendFrom='Contact' (with contactId) records a message as coming from the contact, the way an inbound SMS reply is stored — that dispatches nothing to them, since the channel flags describe how to reach the contact, and it raises the organization's unread count instead of clearing it. Set at least one channel on any message meant to reach the person: a send with every channel off is stored and pushed live but dispatches nothing, and it returns the same 200 as one that delivered — the inApp/inSMS/inEmail echoed on lastMessage are the only way to tell the two apart.",
     {
       conversationId: z.string().describe("Conversation GUID — must belong to your organization"),
-      messageBody: z.string().optional().describe("Message text. Omit to send attachments only."),
       sendFrom: z
         .enum(["Organization", "Contact"])
-        .optional()
-        .describe("Which side the message is from. Defaults to Organization."),
+        .describe(
+          "Required — which side the message is from. 'Organization' sends as your organization; 'Contact' records it as the contact's own message. There is no default: a request without it fails."
+        ),
+      messageBody: z.string().optional().describe("Message text. Omit to send attachments only."),
       contactId: z
         .string()
         .optional()
         .describe("Required when sendFrom='Contact'. Must be this conversation's own contact."),
-      eventId: z.string().optional().describe("Tag the message to one of your organization's events"),
+      eventId: z
+        .string()
+        .optional()
+        .describe(
+          "Tag the message to one of your organization's events. Validated before anything is stored: an unknown id, a deleted one, or an event of another organization is rejected with EVENT_NOT_LINKED, so a tag that is accepted always resolves to a real eventName when the message is read back."
+        ),
       attachments: z
         .array(
           z.object({
@@ -607,7 +639,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "mark_conversation_read",
-    "Mark a conversation read up to now, clearing its unread count. Always records the ORGANIZATION as the reader — there is no contact-side mark-read on this surface. Returns the recorded readDate.",
+    "Mark a conversation read up to now, clearing its unread count. Always records the ORGANIZATION as the reader — there is no contact-side mark-read on this surface, so do not call it to represent the contact reading. Until API-key management ships a key acts as the organization's owner account, so this also clears the badge that owner sees in the web app: the API and the app share one read state. Idempotent, and the read mark only moves forward. Returns the recorded readDate.",
     { id: z.string().describe("Conversation GUID") },
     async ({ id }) => ({
       content: [{ type: "text", text: JSON.stringify(await client.markConversationRead(id), null, 2) }],
@@ -689,7 +721,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
     server.tool(
       "chat_realtime_poll",
-      "Read chat events buffered since your last poll. Two event types arrive: ReceiveMessage (a message was sent — branch on lastMessage.isFromOrganization for which side, and note your OWN sends echo back here, so reconcile on lastMessage.id) and MarkMessagesRead (a read receipt — branch on readByContact for the direction). The cursor advances by itself, so repeated bare calls return only what is new. If status.reconnects is non-zero or status.dropped is above 0, events were missed: re-read with list_messages rather than trusting the buffer.",
+      "Read chat events buffered since your last poll. Two event types arrive: ReceiveMessage (a message was sent — branch on lastMessage.isFromOrganization for which side, never on senderId, and note your OWN sends echo back here, so reconcile on lastMessage.id) and MarkMessagesRead (a read receipt — branch on readByContact for the direction). The cursor advances by itself, so repeated bare calls return only what is new. If status.reconnects is non-zero or status.dropped is above 0, events were missed: re-read with list_messages rather than trusting the buffer.",
       {
         contactId: z
           .string()

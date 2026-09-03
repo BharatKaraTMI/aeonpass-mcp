@@ -1,5 +1,5 @@
 /** Also the SignalR hub host — see realtime.ts. */
-export const BASE_URL = "https://apv2-gatewayapp-prod-westus3.azurewebsites.net";
+export const BASE_URL = "https://apv2-gatewayapp-stage-westus3.azurewebsites.net";
 
 /** One API call, recorded without credentials or personal data. */
 export interface CallLog {
@@ -25,6 +25,35 @@ export interface CallLog {
 export function logToStderr(entry: CallLog): void {
   console.error(JSON.stringify({ src: "aeonpass-mcp", ...entry }));
 }
+
+/**
+ * Which side of an Org↔Contact conversation a read is *reported* from — the
+ * `view` query parameter on the three conversation reads.
+ *
+ * It selects `callerRole` and nothing else. `Organization` and `Auto` report
+ * `ORG_MEMBER`, `Contact` reports `CONTACT`; the rows themselves are identical
+ * either way, because an API key reads the thread as the organization whichever
+ * value it sends — `unreadCount`, `isReadByUser` and `isRead` stay the
+ * organization's throughout. It is not an access switch and it does not change
+ * what a key can reach.
+ *
+ * The spec's own schema text says the opposite at length — "a narrowing filter,
+ * never a grant", "ask for a side you do not hold and the request is denied".
+ * That is the rule on the *token* surface, where the value does reach the
+ * authorization check. The `/portal` reads are the documented exception: a key
+ * is org-side by construction, so `view` never reaches that check and `Contact`
+ * is accepted rather than denied. Only the portal rule applies here.
+ *
+ * The one value that changes a *request* is `Contact` on the list, which needs
+ * a `contactId` to say which contact's seat to report from, and answers with
+ * that one conversation.
+ *
+ * `Auto` is the API's default *and* its zero value, and it means "infer the
+ * side from the caller, as before" — so omitting the parameter reproduces the
+ * pre-`view` request exactly. That is why every method below leaves it unset
+ * unless a caller asks for one.
+ */
+export type ConversationSide = "Auto" | "Organization" | "Contact";
 
 export interface ClientOptions {
   /** Receives one record per call. Pass `() => {}` to disable. */
@@ -75,7 +104,10 @@ function callMeta(method: string, args: unknown[]): Record<string, unknown> | un
     case "sendChatMessage":
       return {
         conversationId: a?.conversationId,
-        sendFrom: a?.sendFrom ?? "Organization",
+        // No `?? "Organization"` fallback: the API requires sendFrom, so a call
+        // without one is a 400, and defaulting it here would log a side the
+        // request never claimed.
+        sendFrom: a?.sendFrom,
         contactId: a?.contactId,
         eventId: a?.eventId,
         channels: { inApp: !!a?.inApp, inSMS: !!a?.inSMS, inEmail: !!a?.inEmail },
@@ -97,7 +129,7 @@ function callMeta(method: string, args: unknown[]): Record<string, unknown> | un
     case "getContactByGuest":
       return { guestId: a };
     case "listMessages":
-      return { conversationId: a, eventId: b?.eventId };
+      return { conversationId: a, eventId: b?.eventId, view: b?.view };
     default:
       return undefined;
   }
@@ -541,8 +573,15 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
       return request("POST", "/api/portal/conversations", { contactId });
     },
 
-    getConversation(id: string) {
-      return request("GET", `/api/portal/conversations/${id}`);
+    /**
+     * `view` is sent only when given: the API defaults it to `Auto`, which is
+     * the behaviour this call had before the parameter existed, so a bare call
+     * is unchanged. `view: "Contact"` reports `callerRole: "CONTACT"` for the
+     * thread's own contact and needs no id of its own; every other field still
+     * comes back as the organization sees it.
+     */
+    getConversation(id: string, view?: ConversationSide) {
+      return request("GET", `/api/portal/conversations/${id}`, undefined, { view });
     },
 
     /**
@@ -555,20 +594,37 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
       });
     },
 
+    /**
+     * `contactId` narrows to the single conversation with that contact, and is
+     * **required** when `view` is `"Contact"` — that pairing reports the row
+     * from the contact's seat, and without an id there is no seat to name
+     * (`400 CONTACT_ID_REQUIRED`). A contact of another organization is not an
+     * error here, just an empty page.
+     */
     listConversations(params: {
       pageNo?: number;
       pageSize?: number;
       searchTerm?: string;
       isUnreadOnly?: boolean;
+      contactId?: string;
+      view?: ConversationSide;
     }) {
       const query: Record<string, string | undefined> = {};
       if (params.pageNo) query.pageNo = String(params.pageNo);
       if (params.pageSize) query.pageSize = String(params.pageSize);
       if (params.searchTerm) query.searchTerm = params.searchTerm;
       if (params.isUnreadOnly !== undefined) query.isUnreadOnly = String(params.isUnreadOnly);
+      if (params.contactId) query.contactId = params.contactId;
+      if (params.view) query.view = params.view;
       return request("GET", "/api/portal/conversations/list", undefined, query);
     },
 
+    /**
+     * `view` is accepted here only so a caller can pass the same value it sent
+     * to `getConversation`. A message has no `callerRole` of its own, so every
+     * value returns the same page — `isRead` is the organization's receipt on
+     * all of them. It is a no-op kept for symmetry, not a filter.
+     */
     listMessages(
       conversationId: string,
       params: {
@@ -576,6 +632,7 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
         pageNo?: number;
         pageSize?: number;
         searchTerm?: string;
+        view?: ConversationSide;
       }
     ) {
       const query: Record<string, string | undefined> = {};
@@ -583,18 +640,37 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
       if (params.pageNo) query.pageNo = String(params.pageNo);
       if (params.pageSize) query.pageSize = String(params.pageSize);
       if (params.searchTerm) query.searchTerm = params.searchTerm;
+      if (params.view) query.view = params.view;
       return request("GET", `/api/portal/conversations/${conversationId}/messages`, undefined, query);
     },
 
     /**
+     * `sendFrom` is **required** on this surface. A key is org-side by
+     * construction but may record either side, so there is no side to infer;
+     * omitting it fails request binding before any of the endpoint's own
+     * validation runs, which is why it is a required parameter here rather
+     * than one we default. (The token surface leaves it nullable — null there
+     * means "infer from the caller" — but this client only speaks portal.)
+     *
      * `sendFrom: "Contact"` attributes the message to the contact, the way an
      * inbound SMS reply is stored, and dispatches nothing — inApp/inSMS/inEmail
      * describe how to *reach* the contact, so they only mean something when
      * sending as the organization.
+     *
+     * `eventId` is checked against the authorization store before anything is
+     * stored: an unknown id, a deleted one, or another organization's event all
+     * fail with `EVENT_NOT_LINKED`. It used to be accepted unvalidated and kept
+     * as a tag that never resolved to an `eventName`, so a caller that was
+     * quietly writing junk tags now gets a 400 instead.
+     *
+     * Leaving every channel off is legal and *not* an error: the message is
+     * stored and pushed to live subscribers, but nothing is dispatched to the
+     * contact, and the 200 is indistinguishable from a delivered send apart
+     * from the flags echoed on `lastMessage`.
      */
     sendChatMessage(params: {
       conversationId: string;
-      sendFrom?: "Organization" | "Contact";
+      sendFrom: "Organization" | "Contact";
       contactId?: string;
       eventId?: string;
       messageBody?: string;

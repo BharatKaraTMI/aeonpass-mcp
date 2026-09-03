@@ -117,7 +117,7 @@
           "Portal"
         ],
         "summary": "List a conversation's messages.",
-        "description": "Returns a paginated page of the conversation's messages, both sides of the exchange, newest\nfirst (`messageDate` descending).\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- The conversation must belong to the API key's organization; any other id returns\n  `CONVERSATION_ACCESS_DENIED`, and an unknown id returns `404`.\n- `isFromOrganization` tells the two sides apart, and it is derived from **who the message is\n  from**, never from which surface recorded it. `false` therefore covers every contact-side\n  message alike: an SMS reply captured from Twilio, a send from the contact's own app, and one an\n  integration recorded with `sendFrom: \"Contact\"` on `POST /portal/conversations/send-message`.\n- `senderId` follows from that: a user id on an organization-side message, and the **contactId**\n  on a contact-side one. `sender` carries the display block either way, so prefer it for\n  rendering.\n- `isRead` is the receipt for the organization side: on a message you sent it turns true once the\n  contact has read past it; messages from the contact are always `true`.\n- `EventId` is a plain filter on the message's own tag — it narrows the page to that event's\n  exchange, on both sides. Untagged messages (inbound SMS above all) drop out, and an event id\n  that matches nothing returns an empty page rather than an error.\n- `SearchTerm` matches the message body (case-insensitive substring).\n- Attachments are returned inline on each message; they follow their message's visibility.\n\n**Response shape:**\n```json\n{\n  \"data\": [ ... ],\n  \"pagination\": { \"totalCount\": 100, \"page\": 1, \"pageSize\": 20, \"totalPages\": 5 }\n}\n```\nIf `PageNo`/`PageSize` are omitted they default to `1`/`100`.",
+        "description": "Returns a paginated page of the conversation's messages, both sides of the exchange, newest\nfirst (`messageDate` descending).\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- The conversation must belong to the API key's organization; any other id returns\n  `CONVERSATION_ACCESS_DENIED`, and an unknown id returns `404`.\n- `isFromOrganization` is what tells the two sides apart — branch on it, never on `senderId`. It\n  is recorded when the message is sent, so `false` covers every contact-side message alike (an SMS\n  reply, a send from the contact's own app, one recorded with `sendFrom: \"Contact\"`), and `true`\n  covers every organization send — including to a contact linked to the same user account the\n  key acts as.\n- `senderId` names who the message is from, but **do not match it against a contactId**: it holds\n  the contact's id on an SMS reply and on a `sendFrom: \"Contact\"` send, and their *user* id when\n  they sent from their own app. `sender` carries the display block either way — render from that.\n- `isRead` is the organization's receipt: messages from the contact are always `true`, and one you\n  sent turns true once the contact has read past it. A contact with **no registered account** has\n  no way to record a read, so there it stays `false` — that is not a delivery failure.\n- `EventId` is a plain filter on the message's own tag — it narrows the page to that event's\n  exchange, on both sides. Untagged messages (inbound SMS above all) drop out, and an event id\n  that matches nothing returns an empty page rather than an error.\n- `SearchTerm` matches the message body (case-insensitive substring).\n- Attachments are returned inline on each message; they follow their message's visibility.\n- `View` is accepted so the same value can be sent here as on `GET /portal/conversations/{id}`,\n  where it selects `callerRole`. A message carries no `callerRole` of its own, so the page is the\n  same on every value: the key reads the thread as the organization, and `isRead` is the\n  organization's receipt as described above.\n\n**Response shape:**\n```json\n{\n  \"data\": [ ... ],\n  \"pagination\": { \"totalCount\": 100, \"page\": 1, \"pageSize\": 20, \"totalPages\": 5 }\n}\n```\nIf `PageNo`/`PageSize` are omitted they default to `1`/`100`.",
         "operationId": "AeonPassChatAPIEndPointsPortalMessagesPortalListMessagesEndPoint",
         "parameters": [
           {
@@ -168,6 +168,19 @@
               "type": "string",
               "nullable": true
             }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "description": "Optional: accepted so the same value can be sent here as on GET /portal/conversations/{id}.\nA message carries no callerRole, so the page is identical on every value.",
+            "schema": {
+              "nullable": true,
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ConversationSide"
+                }
+              ]
+            }
           }
         ],
         "responses": {
@@ -207,7 +220,7 @@
           "Portal"
         ],
         "summary": "Get a conversation by id.",
-        "description": "Returns a single conversation with its contact, last message and unread count.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- Only conversations belonging to the API key's organization are readable; any other id returns\n  `CONVERSATION_ACCESS_DENIED`, and an unknown id returns `404`.\n- `unreadCount` and the read/seen flags are computed for the organization owner (the acting user\n  behind the API key), so they move when the key marks a thread read. They are the\n  **organization's** view of the thread on either side of it: a message recorded with\n  `sendFrom: \"Contact\"` is incoming, so it raises `unreadCount` rather than clearing it.\n- `lastMessage` is a preview of the newest message only — page the thread with\n  `GET /portal/conversations/{conversationId}/messages`. It is null on a thread with no messages.\n- `participants` holds the contact block alone; organization-side users are never stored as\n  participants. Use `contact` / `contactId`.\n- `callerRole` is always `ORG_MEMBER` on this surface.",
+        "description": "Returns a single conversation with its contact, last message and unread count.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- Only conversations belonging to the API key's organization are readable; any other id returns\n  `CONVERSATION_ACCESS_DENIED`, and an unknown id returns `404`.\n- `unreadCount` is the organization's, as this key sees it, so it moves when the key marks a\n  thread read. It counts either side of the thread: a message recorded with\n  `sendFrom: \"Contact\"` is incoming, so it raises `unreadCount` rather than clearing it.\n- `isReadByUser` says whether the **contact** has read your last message. It stays `false` on a\n  thread whose contact has no registered account — they have no way to record a read.\n- `lastMessage` is a preview of the newest message only — page the thread with\n  `GET /portal/conversations/{conversationId}/messages`. It is null on a thread with no messages.\n- `participants` holds the contact block alone; organization-side users are never stored as\n  participants. Use `contact` / `contactId`.\n- `View` picks the side the conversation is reported from — `Organization`, or `Contact` for the\n  thread's own contact. It sets `callerRole` to match. Optional — omit it for the `Organization`\n  side.\n- `View` changes `callerRole` only. The key reads the thread as the organization either way, so\n  `unreadCount`, `isReadByUser` and the rest are the organization's on every value.",
         "operationId": "AeonPassChatAPIEndPointsPortalConversationsPortalGetConversationEndPoint",
         "parameters": [
           {
@@ -218,6 +231,19 @@
             "schema": {
               "type": "string",
               "format": "guid"
+            }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "description": "Optional: which side the conversation is reported from — Organization or Contact. It\nselects callerRole and nothing else. Omit it for the Organization side.",
+            "schema": {
+              "nullable": true,
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ConversationSide"
+                }
+              ]
             }
           }
         ],
@@ -258,7 +284,7 @@
           "Portal"
         ],
         "summary": "Mark a conversation as read.",
-        "description": "Marks every message in the conversation read as of now, on the organization side.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- The conversation must belong to the API key's organization; any other id returns\n  `CONVERSATION_ACCESS_DENIED`, and an unknown id returns `404`.\n- The read state is recorded for the organization **owner** (the acting user behind the API key),\n  so this also clears the badge the owner sees in the web app. Reading through the API and reading\n  in the app are the same read state — worth knowing before wiring this into an automation.\n- Idempotent, and the recorded time only moves forward: calling it again simply advances the read\n  mark to now.\n- The contact side is notified in real time (`MarkMessagesRead`) so their \"seen\" tick updates, on\n  both channels that can reach them: their linked user account on `/chat`, and a `/portal/chat`\n  subscriber connected as this contact (`?contactId=`). The second is the only one that reaches a\n  contact with **no** registered account — before it existed such a contact got no receipt at all.\n- Other members of the organization are not notified; they reconcile on their next fetch.\n\n**This is the organization's read mark — there is no contact-side equivalent here.** It records\nthe *organization* as the reader whichever way your connection is scoped, so a contact-facing\nintegration must not call it to represent the person reading: that would clear the organization's\nown badge. The contact side records a read only through their own app on the token surface.\n\n**Response:** `{ \"id\": \"...\", \"readDate\": \"...\" }`.",
+        "description": "Marks every message in the conversation read as of now, on the organization side.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- The conversation must belong to the API key's organization; any other id returns\n  `CONVERSATION_ACCESS_DENIED`, and an unknown id returns `404`.\n- The read state is recorded on the **organization side**, for the API key's organization.\n  *Until API-key management ships*, a key acts as that organization's owner account, so this also\n  clears the badge the owner sees in the web app — the API and the app share one read state.\n  Worth knowing before wiring this into an automation.\n- Idempotent, and the recorded time only moves forward: calling it again simply advances the read\n  mark to now.\n- The contact side is notified in real time (`MarkMessagesRead`) so their \"seen\" tick updates, on\n  both channels that can reach them: their linked user account on `/chat`, and a `/portal/chat`\n  subscriber connected as this contact (`?contactId=`). The second is the only one that reaches a\n  contact with **no** registered account — before it existed such a contact got no receipt at all.\n- Other members of the organization are not notified; they reconcile on their next fetch.\n\n**There is no contact-side equivalent here.** This always records the *organization* as the\nreader, so a contact-facing integration must not call it to represent the person reading — that\nwould clear the organization's own badge. A contact records a read only through their own app.\n\n**Response:** `{ \"id\": \"...\", \"readDate\": \"...\" }`.",
         "operationId": "AeonPassChatAPIEndPointsPortalConversationsPortalMarkAsReadConversationEndPoint",
         "parameters": [
           {
@@ -357,7 +383,7 @@
           "Portal"
         ],
         "summary": "List the organization's conversations.",
-        "description": "Returns a paginated list of the API key's organization's conversations, newest activity first,\neach with its contact, last message and unread count.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- Scoped to the API key's organization. There is no way to widen it — no organization or view\n  parameter is accepted.\n- Ordered by last activity (`updatedOn`, falling back to `createdOn`), descending.\n- `SearchTerm` matches either side of the conversation: the contact's name, email or phone, and\n  the organization's name, email or phone. Case-insensitive substring; a term with 3+ digits also\n  matches phone numbers ignoring formatting.\n- `IsUnreadOnly=true` keeps only conversations whose `unreadCount` is greater than zero.\n- `unreadCount` is computed for the organization owner (the acting user behind the API key), and\n  counts only messages sent after the owner joined the organization.\n- `lastMessage` is null on a conversation that has no messages yet.\n- `callerRole` is always `ORG_MEMBER` on this surface.\n\n**Response shape:**\n```json\n{\n  \"data\": [ ... ],\n  \"pagination\": { \"totalCount\": 100, \"page\": 1, \"pageSize\": 20, \"totalPages\": 5 }\n}\n```\nIf `PageNo`/`PageSize` are omitted they default to `1`/`100`. A page past the end returns an\nempty `data` with the same `pagination.totalCount`.",
+        "description": "Returns a paginated list of the API key's organization's conversations, newest activity first,\neach with its contact, last message and unread count.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- Scoped to the API key's organization. There is no way to widen it — no organization parameter\n  is accepted, and the filters below only ever narrow.\n- `ContactId` keeps only the conversation with that contact. The contact must belong to the API\n  key's organization; one from another organization simply matches nothing and returns an empty\n  page.\n- `View` picks the side each row is reported from, and sets `callerRole` to match.\n  `Organization` returns the organization's conversations. `Contact` **requires `ContactId`** —\n  omitting it is a `400` with `errorCode` `CONTACT_ID_REQUIRED` — and returns that one contact's\n  conversation. Optional — omit it for the `Organization` side.\n- `View` changes `callerRole` only. `unreadCount` and the read receipts stay the organization's\n  on every row, because that is the side the API key acts as.\n- Ordered by last activity (`updatedOn`, falling back to `createdOn`), descending.\n- `SearchTerm` matches either side of the conversation: the contact's name, email or phone, and\n  the organization's name, email or phone. Case-insensitive substring; a term with 3+ digits also\n  matches phone numbers ignoring formatting.\n- `IsUnreadOnly=true` keeps only conversations whose `unreadCount` is greater than zero.\n- `unreadCount` is computed for the API key's organization and normally spans the whole thread —\n  the app's \"since you joined\" cutoff needs a membership row, which a key's identity does not\n  have.\n- `lastMessage` is null on a conversation that has no messages yet.\n\n**Response shape:**\n```json\n{\n  \"data\": [ ... ],\n  \"pagination\": { \"totalCount\": 100, \"page\": 1, \"pageSize\": 20, \"totalPages\": 5 }\n}\n```\nIf `PageNo`/`PageSize` are omitted they default to `1`/`100`. A page past the end returns an\nempty `data` with the same `pagination.totalCount`.",
         "operationId": "AeonPassChatAPIEndPointsPortalConversationsPortalListConversationsEndPoint",
         "parameters": [
           {
@@ -397,6 +423,29 @@
               "type": "boolean",
               "nullable": true
             }
+          },
+          {
+            "name": "contactId",
+            "in": "query",
+            "description": "Optional filter: keep only the conversation with this contact of the API key's organization.\nRequired when View is Contact.",
+            "schema": {
+              "type": "string",
+              "format": "guid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "description": "Optional: which side the rows are reported from — Organization or Contact. It selects\ncallerRole and nothing else. Omit it for the Organization side; Contact\nrequires ContactId.",
+            "schema": {
+              "nullable": true,
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ConversationSide"
+                }
+              ]
+            }
           }
         ],
         "responses": {
@@ -409,6 +458,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Validation error — `errors[].errorCode` is `CONTACT_ID_REQUIRED` (`View=Contact` was sent without a `ContactId`)."
           },
           "401": {
             "description": "Missing or invalid X-API-KEY."
@@ -430,7 +482,7 @@
           "Portal"
         ],
         "summary": "Send a message in a conversation, from the organization or from its contact.",
-        "description": "Records a message in a conversation and hands it off for delivery on the channels you select.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Which side the message is from:** `SendFrom` — `Organization` (the default) or `Contact`.\n\n| `SendFrom` | Stored as | Delivery | `ContactId` |\n|---|---|---|---|\n| `Organization` | from the organization **owner**, the acting user behind an API key — the message appears in the web app as though the owner sent it, and the thread is marked read for them | the channels below dispatch to the contact | ignored |\n| `Contact` | from the contact, exactly as an SMS reply is (`isFromOrganization: false`) | the channels below dispatch **nothing** — an incoming message notifies the organization instead | **required** |\n\n`SendFrom=Contact` lets one key mirror both halves of a thread — an integration that owns the\ncontact-facing surface can record the person's replies without a user account for them. It changes\nonly *attribution*: the key still has to be allowed to write to the conversation, and the contact\nis never a way to reach a conversation the key could not already reach.\n\n**`SendFrom=Contact` validation** — all of it, before anything is stored:\n- `ContactId` is required (`CONTACT_ID_REQUIRED`).\n- It must be **this conversation's** contact (`CONVERSATION_ACCESS_DENIED` on `contactId`) — a\n  conversation is the pair (organization, contact) and has no other participant.\n- That contact must exist in chat's replica (`CONTACT_NOT_SYNCED`) and belong to the API key's\n  organization (`ORGANIZATION_ID_MISMATCH`). A contact of another organization can never be\n  borrowed as a sender.\n- Unread is not cleared for the organization: an incoming message raises the organization's\n  `unreadCount`, and the response reflects that. Sending as the organization still marks the\n  thread read for the owner, as before.\n\n**Behavior:**\n- The conversation must belong to the API key's organization; any other id returns\n  `CONVERSATION_ACCESS_DENIED`, and an unknown id returns `404`.\n- `MessageBody` and `Attachments` are both optional, so either alone is a valid message.\n- `Attachments` take the values returned by `POST /portal/conversations/upload-docs`.\n- `EventId` tags the message to one of this organization's events. Optional; a message needs no\n  event. An event belonging to a **different** organization is rejected\n  (`ORGANIZATION_ID_MISMATCH`); an id not yet replicated into chat is accepted and stored as the\n  tag.\n- Delivery is asynchronous: the request succeeds once the message is persisted and queued,\n  independent of whether SMS/email delivery ultimately succeeds.\n- The message is pushed live to every `/portal/chat` subscriber of this organization, to a\n  `/portal/chat` subscriber connected as this conversation's contact (`?contactId=`), and to the\n  web/member apps — regardless of the delivery channels below, and whichever side sent it. Those\n  channels govern outbound delivery to the person, not who can see the message.\n\n**Delivery channels:** all default to `false`. Set none and the message is still stored and\npushed live, but nothing is dispatched to the contact. They are only meaningful when `SendFrom`\nis `Organization`: they describe how to reach the *contact*, so on a `SendFrom=Contact` send they\nare stored on the row but dispatch nothing.\n\n| Field | Channel |\n|-------|---------|\n| `InApp` | In-app push — reaches only a contact with a registered user account |\n| `InSMS` | SMS — the one channel that reaches a contact with no account, and the channel their replies come back on |\n| `InEmail` | Email |\n\n**Request examples**\n\nSending as the organization — `sendFrom` may be omitted entirely, which is what every caller did\nbefore it existed:\n\n```json\n{\n  \"conversationId\": \"3f1c…\",\n  \"messageBody\": \"Your table is ready.\",\n  \"inSMS\": true\n}\n```\n\nRecording the contact's reply. `contactId` is required here and must be this conversation's own\ncontact; the delivery channels are left off because they would dispatch nothing:\n\n```json\n{\n  \"conversationId\": \"3f1c…\",\n  \"sendFrom\": \"Contact\",\n  \"contactId\": \"a94e…\",\n  \"messageBody\": \"On my way.\"\n}\n```\n\n`sendFrom` is sent **by name** — `\"Organization\"` or `\"Contact\"`. The numeric form (`0`, `1`) also\nbinds, which is what the auto-generated example above shows, but prefer the name.\n\n**Response:** the conversation, with `lastMessage` set to the message just sent. On a\n`sendFrom=Contact` send, `lastMessage.isFromOrganization` is `false` and `lastMessage.senderId` is\nthe contactId.",
+        "description": "Records a message in a conversation and hands it off for delivery on the channels you select.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Which side the message is from:** `SendFrom` — `Organization` or `Contact`. **Required**: a\nmessage is from one side or the other, and this surface can record either, so there is no\nsensible default to fall back on.\n\n| `SendFrom` | Stored as | Delivery | `ContactId` |\n|---|---|---|---|\n| `Organization` | from the **API key's organization** (`isFromOrganization: true`), and the thread is marked read on the organization side | the channels below dispatch to the contact | ignored |\n| `Contact` | from the contact, exactly as an SMS reply is (`isFromOrganization: false`), and the organization's `unreadCount` rises | the channels below dispatch **nothing** — the organization is notified instead | **required** |\n\nThe side is **stored on the message**, not re-derived from `senderId`, so `Organization` stays\norg-side even when this conversation's contact is linked to the same user account the key acts as.\n\n`SendFrom=Contact` lets one key mirror both halves of a thread — an integration that owns the\ncontact-facing surface can record the person's replies without a user account for them. It changes\nonly *attribution*: the key still has to be allowed to write to the conversation.\n\n**`SendFrom=Contact` validation** — all of it, before anything is stored:\n- `ContactId` is required (`CONTACT_ID_REQUIRED`).\n- It must be **this conversation's** contact (`CONVERSATION_ACCESS_DENIED` on `contactId`) — a\n  conversation is the pair (organization, contact) and has no other participant.\n- That contact must exist in chat's replica (`CONTACT_NOT_SYNCED`) and belong to the API key's\n  organization (`ORGANIZATION_ID_MISMATCH`).\n\n**Behavior:**\n- The conversation must belong to the API key's organization; any other id returns\n  `CONVERSATION_ACCESS_DENIED`, and an unknown id returns `404`.\n- `MessageBody` and `Attachments` are both optional, so either alone is a valid message.\n- `Attachments` take the values returned by `POST /portal/conversations/upload-docs`.\n- `EventId` tags the message to one of this organization's events. Optional, and **validated\n  before anything is stored**: the id must be a real event linked to the API key's organization,\n  checked live against the authorization store. An unknown id, a deleted one, or an event\n  belonging to a different organization all return `EVENT_NOT_LINKED` — a tag is only accepted if\n  it will resolve to a real `eventName` when the message is read back.\n- Delivery is asynchronous: the request succeeds once the message is persisted and queued.\n- The message is pushed live to every `/portal/chat` subscriber of this organization, to one\n  connected as this conversation's contact (`?contactId=`), and to the web/member apps —\n  whichever side sent it and whatever the delivery channels say. Those channels govern outbound\n  delivery to the person, not who can see the message.\n\n**Delivery channels:** all default to `false`, and are only meaningful when `SendFrom` is\n`Organization` — they describe how to reach the *contact*. Set none, or send them on a\n`SendFrom=Contact` message, and it is still stored and pushed live but nothing is dispatched.\n\n> **A send with no channel set is not an error, and the response cannot be told apart from one\n> that dispatched.** You get the same `200` and the same conversation back either way — the\n> channel flags are echoed on `lastMessage` (`inApp` / `inSMS` / `inEmail`), and that is the only\n> way to tell. So set at least one channel on any message meant to reach the person; omitting\n> them records a message the contact will only ever see by opening the thread.\n\n| Field | Channel |\n|-------|---------|\n| `InApp` | In-app push — reaches only a contact with a registered user account |\n| `InSMS` | SMS — the one channel that reaches a contact with no account, and the channel their replies come back on |\n| `InEmail` | Email |\n\n**Request examples**\n\nSending as the organization:\n\n```json\n{\n  \"conversationId\": \"3f1c…\",\n  \"sendFrom\": \"Organization\",\n  \"messageBody\": \"Your table is ready.\",\n  \"inSMS\": true\n}\n```\n\nRecording the contact's reply. `contactId` is required here and must be this conversation's own\ncontact; the delivery channels are left off because they would dispatch nothing:\n\n```json\n{\n  \"conversationId\": \"3f1c…\",\n  \"sendFrom\": \"Contact\",\n  \"contactId\": \"a94e…\",\n  \"messageBody\": \"On my way.\"\n}\n```\n\n`sendFrom` is sent **by name** — `\"Organization\"` or `\"Contact\"`; the numeric form (`0`, `1`) also\nbinds. Recording a message on another party's behalf is unique to this surface: the token endpoint\nof the same name only lets a caller send as themselves, takes no `contactId`, and leaves\n`sendFrom` optional.\n\n**Response:** the conversation, with `lastMessage` set to the message just sent. On a\n`sendFrom=Contact` send, `lastMessage.isFromOrganization` is `false` and `lastMessage.senderId` is\nthe contactId.",
         "operationId": "AeonPassChatAPIEndPointsPortalMessagesPortalSaveMessageEndPoint",
         "requestBody": {
           "x-name": "PortalSaveMessageEndPointRequest",
@@ -457,7 +509,7 @@
             }
           },
           "400": {
-            "description": "Validation error — `errors[].errorCode` is `CONVERSATION_ACCESS_DENIED` (the conversation belongs to another organization, or `contactId` is not this conversation's contact), `ORGANIZATION_ID_MISMATCH` (the `eventId` or the `contactId` belongs to another organization), `CONTACT_ID_REQUIRED` (`sendFrom` is `Contact` with no `contactId`) or `CONTACT_NOT_SYNCED` (the contact is not yet replicated into chat)."
+            "description": "Validation error — `errors[].errorCode` is `EVENT_NOT_LINKED` (the `eventId` is not a real event of this organization), `CONVERSATION_ACCESS_DENIED` (the conversation belongs to another organization, or `contactId` is not this conversation's contact), `ORGANIZATION_ID_MISMATCH` (the `contactId` belongs to another organization), `CONTACT_ID_REQUIRED` (`sendFrom` is `Contact` with no `contactId`) or `CONTACT_NOT_SYNCED` (the contact is not yet replicated into chat). A missing `sendFrom` is rejected by request binding, before any of these."
           },
           "401": {
             "description": "Missing or invalid X-API-KEY."
@@ -588,15 +640,445 @@
   },
   "components": {
     "schemas": {
-      "PortalCreateConversationEndpointRequest": {
+      "PortalPagedResponseOfMessageDto": {
         "type": "object",
-        "description": "Which contact to open a conversation with. The organization is always the API key's own.",
+        "description": "The portal surface's { data, pagination } contract, so every Portal list endpoint answers the\nsame shape whatever the business layer returns — and the same shape as the AeonPassEvent /\nAeonPassOrganization portal surfaces.",
         "additionalProperties": false,
         "properties": {
+          "data": {
+            "type": "array",
+            "description": "The items on the requested page. Empty when the page is past the end of the result set.",
+            "items": {
+              "$ref": "#/components/schemas/MessageDto"
+            }
+          },
+          "pagination": {
+            "description": "Where this page sits in the full result set.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PortalPagination"
+              }
+            ]
+          }
+        }
+      },
+      "MessageDto": {
+        "type": "object",
+        "description": "One message in a conversation. isRead is per-caller; the rest is the stored row plus\nthe sender's display block.",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Message id.",
+            "format": "guid"
+          },
+          "conversationId": {
+            "type": "string",
+            "description": "The conversation this message belongs to.",
+            "format": "guid"
+          },
+          "senderId": {
+            "type": "string",
+            "description": "Who sent it: the sending user's id on the organization side; on the contact side either the contact's linked user id (app send) or the contactId itself (inbound SMS, which has no user).",
+            "format": "guid"
+          },
+          "messageBody": {
+            "type": "string",
+            "description": "The message text. Null or empty for an attachment-only message.",
+            "nullable": true
+          },
+          "messageDate": {
+            "type": "string",
+            "description": "When the message was sent (UTC). Messages are returned newest first, and read receipts compare against this.",
+            "format": "date-time"
+          },
+          "sender": {
+            "description": "The sender's display block — resolved from users_copy for an organization sender, or the conversation's contact block for a contact sender.",
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ConversationParticipantDto"
+              }
+            ]
+          },
+          "attachments": {
+            "type": "array",
+            "description": "Files attached to this message. Empty when there are none.",
+            "items": {
+              "$ref": "#/components/schemas/MessageAttachmentDto"
+            }
+          },
+          "inApp": {
+            "type": "boolean",
+            "description": "In-app push was requested for this message. Delivery channels only — they never affect who can read the message in the API or in the app."
+          },
+          "inSMS": {
+            "type": "boolean",
+            "description": "SMS delivery was requested for this message."
+          },
+          "inEmail": {
+            "type": "boolean",
+            "description": "Email delivery was requested for this message."
+          },
+          "isRead": {
+            "type": "boolean",
+            "description": "Read receipt from the caller's side: for a message the caller sent, true once the other side has read past it; always true for a message the caller received.",
+            "nullable": true
+          },
+          "eventId": {
+            "type": "string",
+            "description": "The event this message is tagged to, when it was sent in the context of one. Null for an untagged message — inbound SMS is always untagged.",
+            "format": "guid",
+            "nullable": true
+          },
+          "eventName": {
+            "type": "string",
+            "description": "Title of the eventId event (events_copy.title), for display. Null when the message is untagged or the event is not in the replica.",
+            "nullable": true
+          },
+          "isFromOrganization": {
+            "type": "boolean",
+            "description": "True when the organization sent the message, false for the contact's own messages — SMS replies\ncaptured from Twilio included. This is what tells the two sides of the thread apart and drives\nmessage alignment in the UI."
+          }
+        }
+      },
+      "ConversationParticipantDto": {
+        "type": "object",
+        "description": "Display shape for a participant on a conversation — the contact (via\nconversations.contactid) or an org-side message sender (resolved from\nusers_copy). Not a persisted row: the chat model has no participants table, so this is\npurely a projection for the UI. \"Participant\" (not \"member\") because a conversation has both an\norganization member side and a contact side; isContact tells them apart.",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The contact id (contacts_copy.id) for the contact side; null for org-side senders.",
+            "format": "guid",
+            "nullable": true
+          },
+          "conversationId": {
+            "type": "string",
+            "description": "The conversation this participant block belongs to.",
+            "format": "guid"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "First name — the contact's, or the sending user's for an org-side sender.",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Last name. Null when not recorded.",
+            "nullable": true
+          },
+          "profilePicture": {
+            "type": "string",
+            "description": "URL of the profile image. Null when unset.",
+            "nullable": true
+          },
+          "lastReadOn": {
+            "type": "string",
+            "description": "When this participant last read the conversation (UTC). Populated for the contact block only, and null until they have read it at least once.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "userId": {
+            "type": "string",
+            "description": "The linked user account: the contact's, when they have registered, or the sending user's on the org side. Null for a contact with no account.",
+            "format": "guid",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number, for display.",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address, for display.",
+            "nullable": true
+          },
+          "isContact": {
+            "type": "boolean",
+            "description": "True for the contact (person) side; false for an organization-member side."
+          }
+        }
+      },
+      "MessageAttachmentDto": {
+        "type": "object",
+        "description": "A file attached to a message. The upload endpoint returns this shape before the file belongs to a\nmessage; the same shape comes back on every message once it has been sent.",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Attachment id — generated at upload time and reused as the attachment's id when the message is sent.",
+            "format": "guid"
+          },
+          "messageId": {
+            "type": "string",
+            "description": "The message this attachment belongs to. Empty on an upload response, which is not linked to a message yet.",
+            "format": "guid"
+          },
+          "conversationId": {
+            "type": "string",
+            "description": "The conversation the owning message belongs to. Empty on an upload response.",
+            "format": "guid"
+          },
+          "url": {
+            "type": "string",
+            "description": "Public URL of the stored file — what a client downloads or renders.",
+            "nullable": true
+          },
+          "fileName": {
+            "type": "string",
+            "description": "Original file name as uploaded, for display and download.",
+            "nullable": true
+          },
+          "fileType": {
+            "type": "string",
+            "description": "MIME content type of the file, taken from the upload (for example image/png).",
+            "nullable": true
+          },
+          "storageFileName": {
+            "type": "string",
+            "description": "The name the file is stored under in blob storage ({attachmentId}{extension}) — unique, unlike fileName.",
+            "nullable": true
+          }
+        }
+      },
+      "PortalPagination": {
+        "type": "object",
+        "description": "Page metadata returned alongside every Portal list result.",
+        "additionalProperties": false,
+        "properties": {
+          "totalCount": {
+            "type": "integer",
+            "description": "Total items matching the request across all pages.",
+            "format": "int32"
+          },
+          "page": {
+            "type": "integer",
+            "description": "The page returned, 1-based. Echoes the requested pageNo, or the default when it was omitted or not positive.",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Items per page. Echoes the requested pageSize, or the default when it was omitted or not positive.",
+            "format": "int32"
+          },
+          "totalPages": {
+            "type": "integer",
+            "description": "Number of pages at this page size; 0 when there are no results.",
+            "format": "int32"
+          }
+        }
+      },
+      "ConversationSide": {
+        "type": "string",
+        "description": "Which side of an Org↔Contact conversation a request speaks for. It is the one *request-supplied*\nanswer to a question the server has always had to guess from the token, and every read surface that\nasks it — ?view= on the conversation, its message list and the list — uses this type, so a\ncaller learns the vocabulary once. The send surface keeps its own two-valued\nMessageSendFrom (a public contract that predates this) and maps onto it through\nToConversationSide.\n\nIt is a narrowing filter, never a grant. A conversation has exactly two sides, and which ones\nthe caller may take is still decided entirely by the token/key:  asks the\nauthorization to skip the self-contact precedence and answer from the organization side (which stays\nORG_MEMBER or EVENT_MEMBER, resolved exactly as before),  asks for\nthe person side alone. Ask for a side you do not hold and the request is denied — it can never widen\nwhat the token already allows.\n\n\nThe /portal reads are the exception, and a weaker one. An X-API-KEY is org-side by\nconstruction, so there its value never reaches the authorization check at all: it selects the\ncallerRole the endpoint reports and nothing else, and  is accepted rather\nthan denied. Read access is unchanged on every value — the key reads as its organization, so the\nunread counts and receipts stay that side's (doc 18 §5.6). The paragraph above is the rule on the\ntoken surface, which is untouched.\n\n\n means \"decide it from the token, as before\", so a caller that omits the parameter\ngets the pre-existing behaviour bit for bit. It is deliberately the zero value as well as the\ndefault of every parameter that takes this type: a side that goes unset anywhere — a DTO built in\ncode, a mapping that forgets a member — then falls back to the old inference rather than silently\nnarrowing an access decision to one side.\n\n\nSerialized by name (\"Organization\" / \"Contact\" / \"Auto\"), not by ordinal:\nthis is a public contract, and a magic number in a request is the kind of thing a caller gets wrong\nsilently. Query-string values go through , which is more lenient\nstill — it keeps the short org spelling GET /conversations/list?view=org has always\ntaken, and never fails.",
+        "x-enumNames": [
+          "Auto",
+          "Organization",
+          "Contact"
+        ],
+        "enum": [
+          "Auto",
+          "Organization",
+          "Contact"
+        ]
+      },
+      "PortalSaveMessageEndPointResponse": {
+        "type": "object",
+        "description": "The conversation after the send, with lastMessage set to the message just sent.",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Conversation id — echoes the request's conversationId.",
+            "format": "guid"
+          },
+          "organizationId": {
+            "type": "string",
+            "description": "The organization that owns the conversation — the API key's own.",
+            "format": "guid"
+          },
+          "organizationName": {
+            "type": "string",
+            "description": "The organization's display name (organizations_copy.organizationname).",
+            "nullable": true
+          },
+          "organizationLogoUrl": {
+            "type": "string",
+            "description": "The organization's logo URL. Null when none is set.",
+            "nullable": true
+          },
+          "organizationIsSetup": {
+            "type": "boolean",
+            "description": "Whether the organization has completed setup. Null when the org row is not in the replica yet.",
+            "nullable": true
+          },
+          "organizationEmail": {
+            "type": "string",
+            "description": "The organization's contact email. Null when unset.",
+            "nullable": true
+          },
+          "organizationPhone": {
+            "type": "string",
+            "description": "The organization's contact phone. Null when unset.",
+            "nullable": true
+          },
           "contactId": {
             "type": "string",
-            "description": "The contactId to open a conversation with. Must be a contact of the API key's organization.",
+            "description": "The contact on the other side of this conversation. The message's recipient on a\nsendFrom=Organization send, and its sender on a sendFrom=Contact one.",
+            "format": "guid",
+            "nullable": true
+          },
+          "contact": {
+            "description": "The contact's display block (name, avatar, phone/email, linked user, last read).",
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ConversationParticipantDto"
+              }
+            ]
+          },
+          "createdOn": {
+            "type": "string",
+            "description": "When the conversation was started (UTC).",
+            "format": "date-time"
+          },
+          "updatedOn": {
+            "type": "string",
+            "description": "Last activity (UTC) — this send has just touched it.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "isReadByUser": {
+            "type": "boolean",
+            "description": "Read state of lastMessage from the organization's seat. sendFrom=Contact is always\ntrue — the message is incoming. sendFrom=Organization is false until the contact reads past\nit, and stays false indefinitely for a contact with no registered account, who cannot record a read.",
+            "nullable": true
+          },
+          "unreadCount": {
+            "type": "integer",
+            "description": "Unread messages on the organization side, for the API key's organization.\nsendFrom=Organization returns 0, because sending marks the thread read for the sender.\nsendFrom=Contact is not cleared: the message is incoming, so it counts against the\norganization exactly as a real reply does.",
+            "format": "int32"
+          },
+          "lastMessage": {
+            "description": "The message that was just sent, with its id, timestamp, attachments and event tag.",
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MessageDto"
+              }
+            ]
+          }
+        }
+      },
+      "PortalSaveMessageEndPointRequest": {
+        "type": "object",
+        "description": "A message to send into one of the API key organization's conversations, from either side.",
+        "example": {
+          "conversationId": "00000000-0000-0000-0000-000000000000",
+          "sendFrom": 0,
+          "contactId": null,
+          "eventId": null,
+          "messageBody": "Your table is ready.",
+          "attachments": [],
+          "inApp": false,
+          "inSMS": true,
+          "inEmail": false
+        },
+        "additionalProperties": false,
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "description": "The conversation to send into. Must belong to the API key's organization.",
             "format": "guid"
+          },
+          "sendFrom": {
+            "description": "Required: which side the message is from — Organization (the API key's organization) or\nContact, which attributes it to ContactId as an inbound SMS reply is.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MessageSendFrom"
+              }
+            ]
+          },
+          "contactId": {
+            "type": "string",
+            "description": "The contact the message is from. Required when SendFrom is Contact, and must be this\nconversation's own contact. Ignored when sending as the organization.",
+            "format": "guid",
+            "nullable": true
+          },
+          "eventId": {
+            "type": "string",
+            "description": "Optional: tag the message to one of the organization's events. An event owned by another organization is rejected.",
+            "format": "guid",
+            "nullable": true
+          },
+          "messageBody": {
+            "type": "string",
+            "description": "The message text. Optional — omit it to send attachments only.",
+            "nullable": true
+          },
+          "attachments": {
+            "type": "array",
+            "description": "Files to attach, using the values returned by upload-docs. Empty by default.",
+            "items": {
+              "$ref": "#/components/schemas/PortalMessageAttachmentRequest"
+            }
+          },
+          "inApp": {
+            "type": "boolean",
+            "description": "Deliver as an in-app push. Only reaches contacts who have a registered user account."
+          },
+          "inSMS": {
+            "type": "boolean",
+            "description": "Deliver by SMS. This is the channel the contact replies on."
+          },
+          "inEmail": {
+            "type": "boolean",
+            "description": "Deliver by email."
+          }
+        }
+      },
+      "MessageSendFrom": {
+        "type": "string",
+        "description": "Which side of an Org↔Contact conversation an outgoing message is from: it lands in\nmessages.isfromorganization and decides whose id goes to messages.senderid.\n\nOn a person's token it states the caller's own side and is authorized like a read of that side\n(doc 05 §2.1) —  only for this thread's contact, who sends as themselves. On an\nX-API-KEY the key is org-side by construction, so  instead selects the\n*attribution*: the message is recorded as the conversation's contact's, as an inbound SMS reply is,\nand the contact id is required. Neither is ever a grant — nobody can send as a contact they are not.\n\n\nThere is no Auto member: the token surface makes the field nullable and null (omitted)\nis what means \"infer the side from the caller, as before\"; the API-key surface requires a value.\nSerialized by name, and the numeric form (0/1) still binds.",
+        "x-enumNames": [
+          "Organization",
+          "Contact"
+        ],
+        "enum": [
+          "Organization",
+          "Contact"
+        ]
+      },
+      "PortalMessageAttachmentRequest": {
+        "type": "object",
+        "description": "An attachment on an outgoing message — the response of POST /portal/conversations/upload-docs, passed back verbatim.",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The upload's id. Optional — a new id is generated when the attachment is stored either way.",
+            "format": "guid",
+            "nullable": true
+          },
+          "fileName": {
+            "type": "string",
+            "description": "The original file name, for display and download.",
+            "nullable": true
+          },
+          "fileType": {
+            "type": "string",
+            "description": "MIME content type, so clients can render the attachment.",
+            "nullable": true
+          },
+          "url": {
+            "type": "string",
+            "description": "Public URL of the uploaded file. Required — this is what recipients open."
+          },
+          "storageFileName": {
+            "type": "string",
+            "description": "The upload's storageFileName (the blob's unique name).",
+            "nullable": true
           }
         }
       },
@@ -708,16 +1190,28 @@
           }
         }
       },
-      "PortalPagedResponseOfMessageDto": {
+      "PortalCreateConversationEndpointRequest": {
         "type": "object",
-        "description": "Standard offset/page-based pagination shape for the portal (API key) surface, so every Portal list\nendpoint returns the same { data, pagination } contract regardless of what shape the underlying\nbusiness-layer response happens to use. Same contract as the AeonPassEvent / AeonPassOrganization\nportal surfaces, so one API consumer sees one pagination shape across all of them.",
+        "description": "Which contact to open a conversation with. The organization is always the API key's own.",
+        "additionalProperties": false,
+        "properties": {
+          "contactId": {
+            "type": "string",
+            "description": "The contactId to open a conversation with. Must be a contact of the API key's organization.",
+            "format": "guid"
+          }
+        }
+      },
+      "PortalPagedResponseOfConversationDto": {
+        "type": "object",
+        "description": "The portal surface's { data, pagination } contract, so every Portal list endpoint answers the\nsame shape whatever the business layer returns — and the same shape as the AeonPassEvent /\nAeonPassOrganization portal surfaces.",
         "additionalProperties": false,
         "properties": {
           "data": {
             "type": "array",
             "description": "The items on the requested page. Empty when the page is past the end of the result set.",
             "items": {
-              "$ref": "#/components/schemas/MessageDto"
+              "$ref": "#/components/schemas/ConversationDto"
             }
           },
           "pagination": {
@@ -744,6 +1238,53 @@
             "type": "string",
             "description": "The read timestamp recorded (UTC) — every message sent up to this instant now counts as read.",
             "format": "date-time"
+          }
+        }
+      },
+      "PortalUploadDocsEndPointResponse": {
+        "type": "object",
+        "description": "One uploaded file. Pass these values straight through as an attachments entry on send-message.",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Id assigned to the file. Pass it back as the attachment's id when sending the message.",
+            "format": "guid"
+          },
+          "url": {
+            "type": "string",
+            "description": "Public URL of the stored file. Required when sending the attachment.",
+            "nullable": true
+          },
+          "fileName": {
+            "type": "string",
+            "description": "The original file name, echoed from the upload.",
+            "nullable": true
+          },
+          "fileType": {
+            "type": "string",
+            "description": "MIME content type detected from the upload (for example image/png).",
+            "nullable": true
+          },
+          "storageFileName": {
+            "type": "string",
+            "description": "The name the file is stored under in blob storage ({id}{extension}) — unique, unlike fileName.",
+            "nullable": true
+          }
+        }
+      },
+      "PortalUploadDocsEndPointRequest": {
+        "type": "object",
+        "description": "The multipart/form-data body of an attachment upload.",
+        "additionalProperties": false,
+        "required": [
+          "file"
+        ],
+        "properties": {
+          "file": {
+            "type": "array",
+            "description": "The files to upload, as multipart/form-data parts named File. Repeat the field to upload several in one request; at least one is required.",
+            "items": {}
           }
         }
       },
@@ -793,470 +1334,20 @@
             "format": "guid"
           }
         }
+      }
+    },
+    "securitySchemes": {
+      "JWTBearerAuth": {
+        "type": "http",
+        "description": "Enter a JWT token to authorize the requests...",
+        "scheme": "Bearer",
+        "bearerFormat": "JWT"
       },
-      "PortalPagedResponseOfConversationDto": {
-        "type": "object",
-        "description": "Standard offset/page-based pagination shape for the portal (API key) surface, so every Portal list\nendpoint returns the same { data, pagination } contract regardless of what shape the underlying\nbusiness-layer response happens to use. Same contract as the AeonPassEvent / AeonPassOrganization\nportal surfaces, so one API consumer sees one pagination shape across all of them.",
-        "additionalProperties": false,
-        "properties": {
-          "data": {
-            "type": "array",
-            "description": "The items on the requested page. Empty when the page is past the end of the result set.",
-            "items": {
-              "$ref": "#/components/schemas/ConversationDto"
-            }
-          },
-          "pagination": {
-            "description": "Where this page sits in the full result set.",
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/PortalPagination"
-              }
-            ]
-          }
-        }
-      },
-      "PortalSaveMessageEndPointRequest": {
-        "type": "object",
-        "description": "A message to send into one of the API key organization's conversations, from either side.",
-        "additionalProperties": false,
-        "properties": {
-          "conversationId": {
-            "type": "string",
-            "description": "The conversation to send into. Must belong to the API key's organization.",
-            "format": "guid"
-          },
-          "sendFrom": {
-            "description": "Which side the message is from: Organization (the default) or Contact. Omit it and the\nmessage is attributed to the organization exactly as before.",
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/MessageSendFrom"
-              }
-            ]
-          },
-          "contactId": {
-            "type": "string",
-            "description": "The contact the message is from. Required when SendFrom is Contact, and must be this\nconversation's own contact, in the API key's organization. Ignored when sending as the organization.",
-            "format": "guid",
-            "nullable": true
-          },
-          "eventId": {
-            "type": "string",
-            "description": "Optional: tag the message to one of the organization's events. An event owned by another organization is rejected.",
-            "format": "guid",
-            "nullable": true
-          },
-          "messageBody": {
-            "type": "string",
-            "description": "The message text. Optional — omit it to send attachments only.",
-            "nullable": true
-          },
-          "attachments": {
-            "type": "array",
-            "description": "Files to attach, using the values returned by upload-docs. Empty by default.",
-            "items": {
-              "$ref": "#/components/schemas/PortalMessageAttachmentRequest"
-            }
-          },
-          "inApp": {
-            "type": "boolean",
-            "description": "Deliver as an in-app push. Only reaches contacts who have a registered user account."
-          },
-          "inSMS": {
-            "type": "boolean",
-            "description": "Deliver by SMS. This is the channel the contact replies on."
-          },
-          "inEmail": {
-            "type": "boolean",
-            "description": "Deliver by email."
-          }
-        }
-      },
-      "PortalSaveMessageEndPointResponse": {
-        "type": "object",
-        "description": "The conversation after the send, with lastMessage set to the message just sent.",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "Conversation id — echoes the request's conversationId.",
-            "format": "guid"
-          },
-          "organizationId": {
-            "type": "string",
-            "description": "The organization that owns the conversation — the API key's own.",
-            "format": "guid"
-          },
-          "organizationName": {
-            "type": "string",
-            "description": "The organization's display name (organizations_copy.organizationname).",
-            "nullable": true
-          },
-          "organizationLogoUrl": {
-            "type": "string",
-            "description": "The organization's logo URL. Null when none is set.",
-            "nullable": true
-          },
-          "organizationIsSetup": {
-            "type": "boolean",
-            "description": "Whether the organization has completed setup. Null when the org row is not in the replica yet.",
-            "nullable": true
-          },
-          "organizationEmail": {
-            "type": "string",
-            "description": "The organization's contact email. Null when unset.",
-            "nullable": true
-          },
-          "organizationPhone": {
-            "type": "string",
-            "description": "The organization's contact phone. Null when unset.",
-            "nullable": true
-          },
-          "contactId": {
-            "type": "string",
-            "description": "The contact on the other side of this conversation. The message's recipient on a\nsendFrom=Organization send, and its sender on a sendFrom=Contact one.",
-            "format": "guid",
-            "nullable": true
-          },
-          "contact": {
-            "description": "The contact's display block (name, avatar, phone/email, linked user, last read).",
-            "nullable": true,
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ConversationParticipantDto"
-              }
-            ]
-          },
-          "createdOn": {
-            "type": "string",
-            "description": "When the conversation was started (UTC).",
-            "format": "date-time"
-          },
-          "updatedOn": {
-            "type": "string",
-            "description": "Last activity (UTC) — this send has just touched it.",
-            "format": "date-time",
-            "nullable": true
-          },
-          "isReadByUser": {
-            "type": "boolean",
-            "description": "Read state of lastMessage, from the organization's seat.\n\nsendFrom=Organization: false immediately after the send — it turns true\nonce the contact has read past the message.\nsendFrom=Contact: true. The message is incoming, and an incoming message\nis one you can already see.",
-            "nullable": true
-          },
-          "unreadCount": {
-            "type": "integer",
-            "description": "Unread messages for the organization owner — the acting user behind the API key.\n\nsendFrom=Organization: 0. Sending marks the thread read for the\nsender.\nsendFrom=Contact: not cleared, and normally 1 or more. The message\nis incoming, so it counts against the organization exactly as a real reply does — clearing the badge\nhere would hide a message nobody on that side has seen.",
-            "format": "int32"
-          },
-          "lastMessage": {
-            "description": "The message that was just sent, with its id, timestamp, attachments and event tag.",
-            "nullable": true,
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/MessageDto"
-              }
-            ]
-          }
-        }
-      },
-      "PortalUploadDocsEndPointRequest": {
-        "type": "object",
-        "description": "The multipart/form-data body of an attachment upload.",
-        "additionalProperties": false,
-        "required": [
-          "file"
-        ],
-        "properties": {
-          "file": {
-            "type": "array",
-            "description": "The files to upload, as multipart/form-data parts named File. Repeat the field to upload several in one request; at least one is required.",
-            "items": {}
-          }
-        }
-      },
-      "PortalUploadDocsEndPointResponse": {
-        "type": "object",
-        "description": "One uploaded file. Pass these values straight through as an attachments entry on send-message.",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "Id assigned to the file. Pass it back as the attachment's id when sending the message.",
-            "format": "guid"
-          },
-          "url": {
-            "type": "string",
-            "description": "Public URL of the stored file. Required when sending the attachment.",
-            "nullable": true
-          },
-          "fileName": {
-            "type": "string",
-            "description": "The original file name, echoed from the upload.",
-            "nullable": true
-          },
-          "fileType": {
-            "type": "string",
-            "description": "MIME content type detected from the upload (for example image/png).",
-            "nullable": true
-          },
-          "storageFileName": {
-            "type": "string",
-            "description": "The name the file is stored under in blob storage ({id}{extension}) — unique, unlike fileName.",
-            "nullable": true
-          }
-        }
-      },
-      "ConversationParticipantDto": {
-        "type": "object",
-        "description": "Display shape for a participant on a conversation — the contact (via\nconversations.contactid) or an org-side message sender (resolved from\nusers_copy). Not a persisted row: the chat model has no participants table, so this is\npurely a projection for the UI. \"Participant\" (not \"member\") because a conversation has both an\norganization member side and a contact side; isContact tells them apart.",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "The contact id (contacts_copy.id) for the contact side; null for org-side senders.",
-            "format": "guid",
-            "nullable": true
-          },
-          "conversationId": {
-            "type": "string",
-            "description": "The conversation this participant block belongs to.",
-            "format": "guid"
-          },
-          "firstName": {
-            "type": "string",
-            "description": "First name — the contact's, or the sending user's for an org-side sender.",
-            "nullable": true
-          },
-          "lastName": {
-            "type": "string",
-            "description": "Last name. Null when not recorded.",
-            "nullable": true
-          },
-          "profilePicture": {
-            "type": "string",
-            "description": "URL of the profile image. Null when unset.",
-            "nullable": true
-          },
-          "lastReadOn": {
-            "type": "string",
-            "description": "When this participant last read the conversation (UTC). Populated for the contact block only, and null until they have read it at least once.",
-            "format": "date-time",
-            "nullable": true
-          },
-          "userId": {
-            "type": "string",
-            "description": "The linked user account: the contact's, when they have registered, or the sending user's on the org side. Null for a contact with no account.",
-            "format": "guid",
-            "nullable": true
-          },
-          "phone": {
-            "type": "string",
-            "description": "Phone number, for display.",
-            "nullable": true
-          },
-          "email": {
-            "type": "string",
-            "description": "Email address, for display.",
-            "nullable": true
-          },
-          "isContact": {
-            "type": "boolean",
-            "description": "True for the contact (person) side; false for an organization-member side."
-          }
-        }
-      },
-      "MessageDto": {
-        "type": "object",
-        "description": "One message in a conversation. isRead is per-caller; the rest is the stored row plus\nthe sender's display block.",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "Message id.",
-            "format": "guid"
-          },
-          "conversationId": {
-            "type": "string",
-            "description": "The conversation this message belongs to.",
-            "format": "guid"
-          },
-          "senderId": {
-            "type": "string",
-            "description": "Who sent it: the sending user's id on the organization side; on the contact side either the contact's linked user id (app send) or the contactId itself (inbound SMS, which has no user).",
-            "format": "guid"
-          },
-          "messageBody": {
-            "type": "string",
-            "description": "The message text. Null or empty for an attachment-only message.",
-            "nullable": true
-          },
-          "messageDate": {
-            "type": "string",
-            "description": "When the message was sent (UTC). Messages are returned newest first, and read receipts compare against this.",
-            "format": "date-time"
-          },
-          "sender": {
-            "description": "The sender's display block — resolved from users_copy for an organization sender, or the conversation's contact block for a contact sender.",
-            "nullable": true,
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ConversationParticipantDto"
-              }
-            ]
-          },
-          "attachments": {
-            "type": "array",
-            "description": "Files attached to this message. Empty when there are none.",
-            "items": {
-              "$ref": "#/components/schemas/MessageAttachmentDto"
-            }
-          },
-          "inApp": {
-            "type": "boolean",
-            "description": "In-app push was requested for this message. Delivery channels only — they never affect who can read the message in the API or in the app."
-          },
-          "inSMS": {
-            "type": "boolean",
-            "description": "SMS delivery was requested for this message."
-          },
-          "inEmail": {
-            "type": "boolean",
-            "description": "Email delivery was requested for this message."
-          },
-          "isRead": {
-            "type": "boolean",
-            "description": "Read receipt from the caller's side: for a message the caller sent, true once the other side has read past it; always true for a message the caller received.",
-            "nullable": true
-          },
-          "eventId": {
-            "type": "string",
-            "description": "The event this message is tagged to, when it was sent in the context of one. Null for an untagged message — inbound SMS is always untagged.",
-            "format": "guid",
-            "nullable": true
-          },
-          "eventName": {
-            "type": "string",
-            "description": "Title of the eventId event (events_copy.title), for display. Null when the message is untagged or the event is not in the replica.",
-            "nullable": true
-          },
-          "isFromOrganization": {
-            "type": "boolean",
-            "description": "True when the organization sent the message, false for the contact's own messages — SMS replies\ncaptured from Twilio included. This is what tells the two sides of the thread apart and drives\nmessage alignment in the UI."
-          }
-        }
-      },
-      "PortalPagination": {
-        "type": "object",
-        "description": "Page metadata returned alongside every Portal list result.",
-        "additionalProperties": false,
-        "properties": {
-          "totalCount": {
-            "type": "integer",
-            "description": "Total items matching the request across all pages.",
-            "format": "int32"
-          },
-          "page": {
-            "type": "integer",
-            "description": "The page returned, 1-based. Echoes the requested pageNo, or the default when it was omitted or not positive.",
-            "format": "int32"
-          },
-          "pageSize": {
-            "type": "integer",
-            "description": "Items per page. Echoes the requested pageSize, or the default when it was omitted or not positive.",
-            "format": "int32"
-          },
-          "totalPages": {
-            "type": "integer",
-            "description": "Number of pages at this page size; 0 when there are no results.",
-            "format": "int32"
-          }
-        }
-      },
-      "MessageSendFrom": {
-        "type": "string",
-        "description": "Which side of an Org↔Contact conversation an outgoing message is attributed to — i.e. whose id is\nwritten to messages.senderid, which is what the whole model derives \"which side sent it\" from\n(senderid vs the conversation's contactid / the contact's linked userid).\n\nIt selects the *attribution*, never the *authorization*: the caller still has to be allowed to write\nto the conversation on its own merits. Only the X-API-KEY (organization) surface may choose\n, so an integration can mirror both sides of a thread through one key — a\nperson's token has no legitimate use for it (an org member picking it would be impersonating their\nown contact, and a contact already sends as themselves).\n\n\nSerialized by **name** (\"Organization\" / \"Contact\"), not by ordinal: this is a public\nintegration contract, and a magic number in a request body is the kind of thing a caller gets wrong\nsilently. The converter still accepts the numeric form on read, so 0/1 also bind. It is\napplied to this type alone — the pre-existing enums on the wire keep the format their consumers\nalready depend on.",
-        "x-enumNames": [
-          "Organization",
-          "Contact"
-        ],
-        "enum": [
-          "Organization",
-          "Contact"
-        ]
-      },
-      "PortalMessageAttachmentRequest": {
-        "type": "object",
-        "description": "An attachment on an outgoing message — the response of POST /portal/conversations/upload-docs, passed back verbatim.",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "The upload's id. Optional — a new id is generated when the attachment is stored either way.",
-            "format": "guid",
-            "nullable": true
-          },
-          "fileName": {
-            "type": "string",
-            "description": "The original file name, for display and download.",
-            "nullable": true
-          },
-          "fileType": {
-            "type": "string",
-            "description": "MIME content type, so clients can render the attachment.",
-            "nullable": true
-          },
-          "url": {
-            "type": "string",
-            "description": "Public URL of the uploaded file. Required — this is what recipients open."
-          },
-          "storageFileName": {
-            "type": "string",
-            "description": "The upload's storageFileName (the blob's unique name).",
-            "nullable": true
-          }
-        }
-      },
-      "MessageAttachmentDto": {
-        "type": "object",
-        "description": "A file attached to a message. The upload endpoint returns this shape before the file belongs to a\nmessage; the same shape comes back on every message once it has been sent.",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "Attachment id — generated at upload time and reused as the attachment's id when the message is sent.",
-            "format": "guid"
-          },
-          "messageId": {
-            "type": "string",
-            "description": "The message this attachment belongs to. Empty on an upload response, which is not linked to a message yet.",
-            "format": "guid"
-          },
-          "conversationId": {
-            "type": "string",
-            "description": "The conversation the owning message belongs to. Empty on an upload response.",
-            "format": "guid"
-          },
-          "url": {
-            "type": "string",
-            "description": "Public URL of the stored file — what a client downloads or renders.",
-            "nullable": true
-          },
-          "fileName": {
-            "type": "string",
-            "description": "Original file name as uploaded, for display and download.",
-            "nullable": true
-          },
-          "fileType": {
-            "type": "string",
-            "description": "MIME content type of the file, taken from the upload (for example image/png).",
-            "nullable": true
-          },
-          "storageFileName": {
-            "type": "string",
-            "description": "The name the file is stored under in blob storage ({attachmentId}{extension}) — unique, unlike fileName.",
-            "nullable": true
-          }
-        }
+      "X-API-KEY": {
+        "type": "apiKey",
+        "description": "Per-organization API key for the portal/integration endpoints. Include as the `X-API-KEY` request header.",
+        "name": "X-API-KEY",
+        "in": "header"
       }
     }
   },

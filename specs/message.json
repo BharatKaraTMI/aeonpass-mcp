@@ -819,17 +819,6 @@
       "PortalSaveMessageEndPointRequest": {
         "type": "object",
         "description": "A message to send into one of the API key organization's conversations, from either side.",
-        "example": {
-          "conversationId": "00000000-0000-0000-0000-000000000000",
-          "sendFrom": 0,
-          "contactId": null,
-          "eventId": null,
-          "messageBody": "Your table is ready.",
-          "attachments": [],
-          "inApp": false,
-          "inSMS": true,
-          "inEmail": false
-        },
         "additionalProperties": false,
         "properties": {
           "conversationId": {

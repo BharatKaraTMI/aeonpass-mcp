@@ -47,10 +47,10 @@ const COVERED = {
   "GET /api/portal/contact/{id}": "getContact",
   "PUT /api/portal/contact/{id}": "updateContact",
   "DELETE /api/portal/contact/{id}": "deleteContact",
-  "GET /api/portal/contact/{OrganizationId}/list": "listContacts",
+  "GET /api/portal/contact/list": "listContacts",
   "POST /api/portal/contact/send-message": "sendMessageToContacts",
   "POST /api/portal/contact/upload-list": "uploadContacts",
-  "GET /api/portal/guest-group/{organizationId}/list": "listGuestGroups",
+  "GET /api/portal/guest-group/list": "listGuestGroups",
 
   "POST /api/portal/conversations": "createConversation",
   "GET /api/portal/conversations/{id}": "getConversation",
@@ -68,7 +68,7 @@ const COVERED = {
 
 /** Endpoints we've decided not to expose, and why. */
 const SKIPPED = {
-  "GET /api/portal/contact/{OrganizationId}/export":
+  "GET /api/portal/contact/export":
     "bulk CSV of every contact — a large PII dump into an LLM context; list_contacts covers paged reads",
 };
 
@@ -80,6 +80,17 @@ const operations = (spec) =>
         .map((m) => `${m.toUpperCase()} ${path}`)
     )
     .sort();
+
+/**
+ * Pretty JSON with `example` values stripped. NSwag regenerates request-body
+ * `example` blocks with fresh random GUIDs on every render, so a raw body
+ * comparison would report a phantom change on every run. Stripping them — for
+ * both the comparison and the stored snapshot — leaves a view that only moves
+ * on a real contract change (a type, an operation, a required flag). Snapshots
+ * are therefore example-free; `--write` refreshes them in that form.
+ */
+const stableView = (spec) =>
+  JSON.stringify(spec, (key, value) => (key === "example" ? undefined : value), 2) + "\n";
 
 const write = process.argv.includes("--write");
 let problems = 0;
@@ -97,7 +108,7 @@ for (const name of SPECS) {
   const liveOps = operations(live);
   // Must match how the snapshot is written below, or the body comparison
   // reports a change on every run.
-  const serialised = JSON.stringify(live, null, 2) + "\n";
+  const serialised = stableView(live);
 
   const snapPath = join(SPEC_DIR, `${name}.json`);
   if (existsSync(snapPath)) {

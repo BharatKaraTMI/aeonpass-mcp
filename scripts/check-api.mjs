@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Detects drift between the published Aeon Pass OpenAPI specs and this server.
 //
-// Why this exists: `info.version` is "1.0.0" on all three specs and has stayed
+// Why this exists: `info.version` is "1.0.0" on every spec and has stayed
 // there across a full path restructure (/api/techaeon/public → /api/portal/
 // techaeon), a change to every list response shape, and the addition of PATCH
 // /guest/{id}. The version field cannot be used to detect change, so we diff
@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SPEC_DIR = join(ROOT, "specs");
 const BASE = "https://aeonpass-dev-portal.vercel.app/api/specs";
-const SPECS = ["techaeon", "event", "organization", "message"];
+const SPECS = ["techaeon", "event", "organization", "message", "global"];
 
 /** operation -> the createClient method that implements it. */
 const COVERED = {
@@ -36,6 +36,7 @@ const COVERED = {
 
   "GET /api/portal/event/{id}": "getEvent",
   "POST /api/portal/guest": "createGuest",
+  "GET /api/portal/guest/{id}": "getGuest",
   "POST /api/portal/guest/{eventId}/list": "listGuests",
   "PUT /api/portal/guest/{id}": "updateGuest",
   "PATCH /api/portal/guest/{id}": "patchGuest",
@@ -64,6 +65,16 @@ const COVERED = {
   // Not a REST call: the spec documents the SignalR hub as a GET so it shows up
   // in the reference. Implemented in realtime.ts, not createClient.
   "GET /api/portal/chat": "connectRealtime (src/realtime.ts)",
+
+  "GET /api/portal/custom-fields": "listCustomFields",
+  "POST /api/portal/custom-fields": "createCustomField",
+  "GET /api/portal/custom-fields/schema": "getCustomFieldSchema",
+  "GET /api/portal/custom-fields/{id}": "getCustomField",
+  "PUT /api/portal/custom-fields/{id}": "updateCustomField",
+  "PATCH /api/portal/custom-fields/{id}": "patchCustomField",
+  "DELETE /api/portal/custom-fields/{id}": "deleteCustomField",
+  "PUT /api/portal/custom-fields/{id}/status": "changeCustomFieldStatus",
+  "PUT /api/portal/custom-fields/{entityType}/reorder": "reorderCustomFields",
 };
 
 /** Endpoints we've decided not to expose, and why. */

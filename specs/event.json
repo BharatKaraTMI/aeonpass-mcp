@@ -55,7 +55,7 @@
           "Portal"
         ],
         "summary": "Create a new guest.",
-        "description": "Creates a new guest for an event and, optionally, issues them an invitation.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `FirstName` is required, and at least one of `Phone` or `Email` must be provided.\n- `GroupId` is required. Valid guest group IDs can be retrieved via `GET /portal/guest-group/{OrganizationId}/list`.\n- Rejects the request if a guest with the same `Phone` or `Email` already exists in the event.\n- If `GuestCode` is provided, it must not already be used by any guest in any event.\n- If `TechaeonCode` is provided, it is validated against the event and the guest is linked to that Techaeon.\n- If `Invitation` is provided, an invitation is created with status **CREATED** (or **PURCHASED** if `IsExternalTicket` is set), and a QR code is generated for it. The response's `Invitation.Id` is the invitation's own identifier — save it if you plan to reference the invitation directly later, though `PUT /portal/guest/{Id}` no longer requires it (it resolves the guest's current invitation automatically).\n- If the guest's `Phone`/`Email` matches an existing platform user account, the guest is automatically linked to that user.\n- If `IsExternalTicket` is set, the `ExternalTicket` details are used to create an associated external ticket order.\n\n**Valid Invitation Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Invitation created but not yet sent. |\n| `SENT` | Invitation has been sent to the guest. |\n| `VIEWED` | Guest has viewed the invitation. |\n| `ACCEPTED` | Guest has accepted the invitation. |\n| `DECLINED` | Guest has declined the invitation. |\n| `VOIDED` | Invitation has been voided. |\n| `EXPIRED` | Invitation has expired. |\n| `ADMITTED` | Guest has been admitted to the event. |\n| `CANCELLED` | Invitation has been cancelled. |\n| `PURCHASED` | Invitation is linked to a purchased/external ticket. |",
+        "description": "Creates a new guest for an event and, optionally, issues them an invitation.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `FirstName` is required, and at least one of `Phone` or `Email` must be provided.\n- `GroupId` is required. Valid guest group IDs can be retrieved via `GET /portal/guest-group/{OrganizationId}/list`.\n- Rejects the request if a guest with the same `Phone` or `Email` already exists in the event.\n- If `GuestCode` is provided, it must not already be used by any guest in any event.\n- If `TechaeonCode` is provided, it is validated against the event and the guest is linked to that Techaeon.\n- If `Invitation` is provided, an invitation is created with status **CREATED** (or **PURCHASED** if `IsExternalTicket` is set), and a QR code is generated for it. The response's `Invitation.Id` is the invitation's own identifier — save it if you plan to reference the invitation directly later, though `PUT /portal/guest/{Id}` no longer requires it (it resolves the guest's current invitation automatically).\n- If the guest's `Phone`/`Email` matches an existing platform user account, the guest is automatically linked to that user.\n- If `IsExternalTicket` is set, the `ExternalTicket` details are used to create an associated external ticket order.\n- `CustomFields` is optional, keyed by custom field definition id (see AeonPassGlobal's `GET /portal/custom-fields?entityType=GUEST`). Every currently-`ACTIVE` mandatory field must be included. Omit `CustomFields` entirely to skip custom fields altogether.\n\n**Valid Invitation Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Invitation created but not yet sent. |\n| `SENT` | Invitation has been sent to the guest. |\n| `VIEWED` | Guest has viewed the invitation. |\n| `ACCEPTED` | Guest has accepted the invitation. |\n| `DECLINED` | Guest has declined the invitation. |\n| `VOIDED` | Invitation has been voided. |\n| `EXPIRED` | Invitation has expired. |\n| `ADMITTED` | Guest has been admitted to the event. |\n| `CANCELLED` | Invitation has been cancelled. |\n| `PURCHASED` | Invitation is linked to a purchased/external ticket. |",
         "operationId": "AeonPassEventAPIEndPointsGuestsPortalPortalCreateGuestEndPoint",
         "requestBody": {
           "x-name": "PortalCreateGuestEndPointRequest",
@@ -187,12 +187,57 @@
           }
         ]
       },
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Fetch a single guest, including their custom field values.",
+        "description": "Fetches one guest's full details by id.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Request**\n\n| Field | Required | Type | Notes |\n|---|---|---|---|\n| `Id` | Yes (route) | guid | The guest to fetch. |\n| `InvitationId` | No (query) | guid | Scope the returned `Invitation` to a specific one, for a guest with more than one. Defaults to the guest's current invitation. |\n\n**Response `200`** — the guest (`PortalGetGuestEndPointResponse`), including `CustomFields`:\nan object keyed by custom field definition id (see AeonPassGlobal's\n`GET /portal/custom-fields?entityType=GUEST`), e.g. `{\"<definitionId>\": \"Vegan\"}`. Empty\nor omitted if the guest has no custom field values set.\n\n**`404`** if `Id` doesn't exist.",
+        "operationId": "AeonPassEventAPIEndPointsGuestsPortalPortalGetGuestEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          },
+          {
+            "name": "invitationId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "guid",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalGetGuestEndPointResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      },
       "patch": {
         "tags": [
           "Portal"
         ],
         "summary": "Partially update a guest — only the fields you send are touched.",
-        "description": "Updates only the fields present in the request body. This is a true partial update\n(JSON Merge Patch semantics), unlike `PUT /portal/guest/{Id}` which replaces the\nwhole record.\n\n**Every field is a plain value in the JSON — never a `{ \"isSet\": ..., \"value\": ... }`\nwrapper.** That shape only exists internally to tell \"omitted\" apart from \"sent as\nnull\"; sending it literally as JSON will fail to deserialize. For example, to rename\na guest and touch nothing else:\n```json\n{\n  \"eventId\": \"e06c9e46-b959-4745-af62-14d9d57947f0\",\n  \"firstName\": \"Jordan Rivera\"\n}\n```\n`lastName`, `phone`, `groupId`, etc. are simply absent from the body above — they are\nleft exactly as they are today.\n\n- **Omit a field** to leave it completely unchanged.\n- **Send a field with a value** to set/replace it.\n- **Send a field as explicit `null`** to clear it, where the domain allows it (e.g.\n  `lastName`, `techaeonCode`, `guestCode`). Fields that can never be empty on a guest\n  (`firstName`, `groupId`) reject an explicit `null` with a validation error instead\n  of silently ignoring it.\n- `invitation` and `externalTicket` are the two exceptions to the rule above — they're\n  plain nested objects in the schema (not the omit/value/null tri-state), because\n  there's no separate \"clear\" behavior for either one to distinguish. Omitting the key\n  or sending it as `null` both mean the same thing: leave it untouched. Send an object\n  to create/update one.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `Phone`/`Email` may both be omitted for a status- or Techaeon-only patch — the\n  guest's current contact info is kept. If a patch would leave the guest with neither\n  Phone nor Email (e.g. explicitly nulling both), the request is rejected with\n  `PHONE_OR_EMAIL_REQUIRED`.\n- `TechaeonCode`: omit to leave the current mapping untouched, send an explicit\n  `null` to detach it, or send a new code to validate and link it. Changing the\n  Techaeon code is only allowed while the guest's invitation status is `CREATED`,\n  `SENT`, or `VIEWED`.\n- `Invitation` is matched to the guest automatically (a guest has at most one active\n  invitation) — you don't need to know its Id. Omit `Invitation` entirely to leave it\n  untouched; within it, omit individual fields (e.g. send only `statusId`) to leave\n  them unchanged too. `Invitation.DesignMappingId` is required only the first time an\n  invitation is created for a guest that doesn't have one yet.\n- If `Phone`/`Email` changes, the invitation's QR code is regenerated.\n- If the invitation status changes without an explicit `TechaeonCode`, a Techaeon is\n  automatically generated for the new status.\n\n**Valid Invitation Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Invitation created but not yet sent. |\n| `SENT` | Invitation has been sent to the guest. |\n| `VIEWED` | Guest has viewed the invitation. |\n| `ACCEPTED` | Guest has accepted the invitation. |\n| `DECLINED` | Guest has declined the invitation. |\n| `VOIDED` | Invitation has been voided. |\n| `EXPIRED` | Invitation has expired. |\n| `ADMITTED` | Guest has been admitted to the event. |\n| `CANCELLED` | Invitation has been cancelled. |\n| `PURCHASED` | Invitation is linked to a purchased/external ticket. |",
+        "description": "Updates only the fields present in the request body. This is a true partial update\n(JSON Merge Patch semantics), unlike `PUT /portal/guest/{Id}` which replaces the\nwhole record.\n\n**Every field is a plain value in the JSON — never a `{ \"isSet\": ..., \"value\": ... }`\nwrapper.** That shape only exists internally to tell \"omitted\" apart from \"sent as\nnull\"; sending it literally as JSON will fail to deserialize. For example, to rename\na guest and touch nothing else:\n```json\n{\n  \"eventId\": \"e06c9e46-b959-4745-af62-14d9d57947f0\",\n  \"firstName\": \"Jordan Rivera\"\n}\n```\n`lastName`, `phone`, `groupId`, etc. are simply absent from the body above — they are\nleft exactly as they are today.\n\n- **Omit a field** to leave it completely unchanged.\n- **Send a field with a value** to set/replace it.\n- **Send a field as explicit `null`** to clear it, where the domain allows it (e.g.\n  `lastName`, `techaeonCode`, `guestCode`). Fields that can never be empty on a guest\n  (`firstName`, `groupId`) reject an explicit `null` with a validation error instead\n  of silently ignoring it.\n- `invitation` and `externalTicket` are the two exceptions to the rule above — they're\n  plain nested objects in the schema (not the omit/value/null tri-state), because\n  there's no separate \"clear\" behavior for either one to distinguish. Omitting the key\n  or sending it as `null` both mean the same thing: leave it untouched. Send an object\n  to create/update one.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `Phone`/`Email` may both be omitted for a status- or Techaeon-only patch — the\n  guest's current contact info is kept. If a patch would leave the guest with neither\n  Phone nor Email (e.g. explicitly nulling both), the request is rejected with\n  `PHONE_OR_EMAIL_REQUIRED`.\n- `TechaeonCode`: omit to leave the current mapping untouched, send an explicit\n  `null` to detach it, or send a new code to validate and link it. Changing the\n  Techaeon code is only allowed while the guest's invitation status is `CREATED`,\n  `SENT`, or `VIEWED`.\n- `Invitation` is matched to the guest automatically (a guest has at most one active\n  invitation) — you don't need to know its Id. Omit `Invitation` entirely to leave it\n  untouched; within it, omit individual fields (e.g. send only `statusId`) to leave\n  them unchanged too. `Invitation.DesignMappingId` is required only the first time an\n  invitation is created for a guest that doesn't have one yet.\n- If `Phone`/`Email` changes, the invitation's QR code is regenerated.\n- If the invitation status changes without an explicit `TechaeonCode`, a Techaeon is\n  automatically generated for the new status.\n- `CustomFields` is optional and is **not** part of the omit/value/null tri-state above\n  — it's a plain object keyed by custom field definition id. Omit `CustomFields` entirely\n  to touch no custom fields at all. Include it to merge exactly the keys present: a\n  value sets/replaces that field, an explicit `null` clears it. Keys not mentioned are\n  left untouched, same as every other field this endpoint doesn't receive.\n\n**Valid Invitation Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Invitation created but not yet sent. |\n| `SENT` | Invitation has been sent to the guest. |\n| `VIEWED` | Guest has viewed the invitation. |\n| `ACCEPTED` | Guest has accepted the invitation. |\n| `DECLINED` | Guest has declined the invitation. |\n| `VOIDED` | Invitation has been voided. |\n| `EXPIRED` | Invitation has expired. |\n| `ADMITTED` | Guest has been admitted to the event. |\n| `CANCELLED` | Invitation has been cancelled. |\n| `PURCHASED` | Invitation is linked to a purchased/external ticket. |",
         "operationId": "AeonPassEventAPIEndPointsGuestsPortalPortalPatchGuestEndPoint",
         "parameters": [
           {
@@ -241,7 +286,7 @@
           "Portal"
         ],
         "summary": "Update existing guest details.",
-        "description": "Updates an existing guest's details and, optionally, their invitation.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `FirstName` is required, and at least one of `Phone` or `Email` must be provided.\n- `GroupId` is required. Valid guest group IDs can be retrieved via `GET /portal/guest-group/{OrganizationId}/list`.\n- Rejects the request if the new `Phone`/`Email` already belongs to a different guest in the same event.\n- If `GuestCode` is changed, the new code must not already be used by a different guest in any event.\n- If `TechaeonCode` is changed, it is validated against the event. The Techaeon code can only be changed while the guest's invitation status is `CREATED`, `SENT`, or `VIEWED` — once the guest has progressed further (e.g. `ACCEPTED`, `ADMITTED`, `PURCHASED`), the code is locked and the request is rejected.\n- If `Invitation` is included and it exists for this guest, its details (passes, quantity, design, status) are updated.\n- If `Phone`/`Email` changes, the invitation's QR code is regenerated.\n- If the invitation status changes without an explicit `TechaeonCode`, a Techaeon is automatically generated for the new status.\n- If `IsExternalTicket` is set, the associated external ticket order is updated.\n\n**Valid Invitation Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Invitation created but not yet sent. |\n| `SENT` | Invitation has been sent to the guest. |\n| `VIEWED` | Guest has viewed the invitation. |\n| `ACCEPTED` | Guest has accepted the invitation. |\n| `DECLINED` | Guest has declined the invitation. |\n| `VOIDED` | Invitation has been voided. |\n| `EXPIRED` | Invitation has expired. |\n| `ADMITTED` | Guest has been admitted to the event. |\n| `CANCELLED` | Invitation has been cancelled. |\n| `PURCHASED` | Invitation is linked to a purchased/external ticket. |",
+        "description": "Updates an existing guest's details and, optionally, their invitation.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `FirstName` is required, and at least one of `Phone` or `Email` must be provided.\n- `GroupId` is required. Valid guest group IDs can be retrieved via `GET /portal/guest-group/{OrganizationId}/list`.\n- Rejects the request if the new `Phone`/`Email` already belongs to a different guest in the same event.\n- If `GuestCode` is changed, the new code must not already be used by a different guest in any event.\n- If `TechaeonCode` is changed, it is validated against the event. The Techaeon code can only be changed while the guest's invitation status is `CREATED`, `SENT`, or `VIEWED` — once the guest has progressed further (e.g. `ACCEPTED`, `ADMITTED`, `PURCHASED`), the code is locked and the request is rejected.\n- If `Invitation` is included and it exists for this guest, its details (passes, quantity, design, status) are updated.\n- If `Phone`/`Email` changes, the invitation's QR code is regenerated.\n- If the invitation status changes without an explicit `TechaeonCode`, a Techaeon is automatically generated for the new status.\n- If `IsExternalTicket` is set, the associated external ticket order is updated.\n- `CustomFields` is optional, keyed by custom field definition id. Only the keys present are validated and written — omit `CustomFields` entirely to leave every existing custom field value untouched. This is a full replace of the guest overall, but custom field values are always merged by key, never wholesale-replaced.\n\n**Valid Invitation Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Invitation created but not yet sent. |\n| `SENT` | Invitation has been sent to the guest. |\n| `VIEWED` | Guest has viewed the invitation. |\n| `ACCEPTED` | Guest has accepted the invitation. |\n| `DECLINED` | Guest has declined the invitation. |\n| `VOIDED` | Invitation has been voided. |\n| `EXPIRED` | Invitation has expired. |\n| `ADMITTED` | Guest has been admitted to the event. |\n| `CANCELLED` | Invitation has been cancelled. |\n| `PURCHASED` | Invitation is linked to a purchased/external ticket. |",
         "operationId": "AeonPassEventAPIEndPointsGuestsPortalPortalUpdateGuestEndPoint",
         "parameters": [
           {
@@ -562,6 +607,11 @@
                 "$ref": "#/components/schemas/ExternalTicketDto"
               }
             ]
+          },
+          "customFields": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {}
           }
         }
       },
@@ -618,6 +668,13 @@
                 "$ref": "#/components/schemas/PortalCreateGuestEndPointInvitationResponse"
               }
             ]
+          },
+          "customFields": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/GuestCustomFieldValueDto"
+            }
           }
         }
       },
@@ -674,6 +731,94 @@
           }
         }
       },
+      "PortalGetGuestEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "groupId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "groupName": {
+            "type": "string",
+            "nullable": true
+          },
+          "guestUserId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "guestSource": {
+            "$ref": "#/components/schemas/GuestSource"
+          },
+          "guestCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "invitation": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InvitationDto"
+              }
+            ]
+          },
+          "isExternalTicket": {
+            "type": "boolean"
+          },
+          "externalTicket": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ExternalTicketDto"
+              }
+            ]
+          },
+          "isEmailChanged": {
+            "type": "boolean"
+          },
+          "isPhoneChanged": {
+            "type": "boolean"
+          },
+          "isUserAccountDeleted": {
+            "type": "boolean"
+          },
+          "customFields": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/GuestCustomFieldValueDto"
+            }
+          }
+        }
+      },
       "PortalPatchGuestEndPointRequest": {
         "type": "object",
         "additionalProperties": false,
@@ -727,6 +872,11 @@
                 "$ref": "#/components/schemas/ExternalTicketDto"
               }
             ]
+          },
+          "customFields": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {}
           }
         }
       },
@@ -783,6 +933,13 @@
                 "$ref": "#/components/schemas/PortalPatchGuestEndPointInvitationResponse"
               }
             ]
+          },
+          "customFields": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/GuestCustomFieldValueDto"
+            }
           }
         }
       },
@@ -854,6 +1011,11 @@
                 "$ref": "#/components/schemas/ExternalTicketDto"
               }
             ]
+          },
+          "customFields": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {}
           }
         }
       },
@@ -910,6 +1072,13 @@
                 "$ref": "#/components/schemas/PortalUpdateGuestEndPointInvitationResponse"
               }
             ]
+          },
+          "customFields": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/GuestCustomFieldValueDto"
+            }
           }
         }
       },
@@ -1113,6 +1282,28 @@
           }
         }
       },
+      "GuestCustomFieldValueDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "fieldKey": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "dataType": {
+            "type": "string"
+          },
+          "value": {
+            "nullable": true
+          }
+        }
+      },
       "PortalGuestDto": {
         "type": "object",
         "additionalProperties": false,
@@ -1284,6 +1475,100 @@
           "totalPages": {
             "type": "integer",
             "format": "int32"
+          }
+        }
+      },
+      "InvitationDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "guestId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "designMappingId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "guestPasses": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "isUnlimited": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "intendedCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "admittedCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "statusId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "statusName": {
+            "type": "string",
+            "nullable": true
+          },
+          "statusCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "isConfirmed": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "qrCodeUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "tierId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "purchasedQuantity": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "isTicketed": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "isExternalTicket": {
+            "type": "boolean"
+          },
+          "techaeons": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/TechaeonMappingDto"
+            }
           }
         }
       },
@@ -1499,106 +1784,6 @@
           }
         }
       },
-      "InvitationDto": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "guid"
-          },
-          "guestId": {
-            "type": "string",
-            "format": "guid"
-          },
-          "eventId": {
-            "type": "string",
-            "format": "guid"
-          },
-          "designMappingId": {
-            "type": "string",
-            "format": "guid",
-            "nullable": true
-          },
-          "guestPasses": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "isUnlimited": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "intendedCount": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "admittedCount": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "statusId": {
-            "type": "string",
-            "format": "guid"
-          },
-          "statusName": {
-            "type": "string",
-            "nullable": true
-          },
-          "statusCode": {
-            "type": "string",
-            "nullable": true
-          },
-          "isConfirmed": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "phone": {
-            "type": "string",
-            "nullable": true
-          },
-          "email": {
-            "type": "string",
-            "nullable": true
-          },
-          "qrCodeUrl": {
-            "type": "string",
-            "nullable": true
-          },
-          "tierId": {
-            "type": "string",
-            "format": "guid",
-            "nullable": true
-          },
-          "purchasedQuantity": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "isTicketed": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "isExternalTicket": {
-            "type": "boolean"
-          },
-          "techaeons": {
-            "type": "array",
-            "nullable": true,
-            "items": {
-              "$ref": "#/components/schemas/TechaeonMappingDto"
-            }
-          }
-        }
-      },
-      "PatchFieldOfNullableOfInt32": {
-        "type": "integer",
-        "format": "int32",
-        "nullable": true,
-        "additionalProperties": false
-      },
       "TechaeonMappingDto": {
         "type": "object",
         "additionalProperties": false,
@@ -1637,6 +1822,12 @@
             "nullable": true
           }
         }
+      },
+      "PatchFieldOfNullableOfInt32": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": true,
+        "additionalProperties": false
       }
     }
   }

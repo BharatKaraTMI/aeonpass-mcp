@@ -1,0 +1,861 @@
+{
+  "x-generator": "NSwag v14.0.3.0 (NJsonSchema v11.0.0.0 (Newtonsoft.Json v13.0.0.0))",
+  "openapi": "3.0.0",
+  "info": {
+    "title": "AeonPassGlobal.API",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://apv2-gatewayapp-prod-westus3.azurewebsites.net"
+    }
+  ],
+  "paths": {
+    "/api/portal/custom-fields": {
+      "post": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Define a new custom field.",
+        "description": "Creates a new custom field definition for the caller's organization and a record type.\n\n**Behavior**\n- Saved with status `DRAFT` by default — invisible on every form until moved to `ACTIVE`\n  via `PUT /portal/custom-fields/{id}/status`. A different starting `status` may be\n  supplied instead (see `status` below), but it must be one of the four recognized\n  values — `DRAFT`, `ACTIVE`, `DEPRECATED`, `ARCHIVED` (also listed at\n  `GET /portal/custom-fields/schema`). Starting anywhere other than `DRAFT` immediately\n  turns on the breaking-change protection that `PUT`/`PATCH` normally only enforce once\n  a field leaves draft.\n- The organization is always the caller's own — resolved from the Bearer token or\n  `X-API-KEY`, never supplied by the client.\n- `fieldKey` must be unique within the organization + `entityType` + `fieldNamespace`.\n- `widgetType` and `cardinality` are both optional — when either is blank, a sensible\n  default is resolved from `dataType` (and from the other of the pair, if given). When\n  both are omitted, the simplest widget for `dataType` is chosen with `\"SINGLE\"`\n  cardinality (`\"LIST\"` only for the default when `cardinality` was requested as `\"LIST\"`\n  on a `SELECT` field).\n- `dataType`, `widgetType`, and `cardinality` are each validated independently against\n  their own known set of values (see tables below for the recognized `widgetType`s per\n  `dataType`, offered as guidance) — supplying any recognized value for each is accepted,\n  there is no cross-field pairing requirement between them.\n- `options` is required (non-empty) when `dataType` is `SELECT`; each option's\n  `optionValue` is auto-generated from `optionLabel` if not supplied.\n- The organization's field count for this `entityType` must be under 1000.\n\n**Authentication:** Bearer token, or `X-API-KEY` for organization-to-organization callers.\n\n**Request body**\n\n| Field | Required | Type | Notes |\n|---|---|---|---|\n| `entityType` | Yes | string | `GUEST`, `CONTACT`, `EVENT`, `ORGANIZATION`, `TECHAEON`. |\n| `scopeEntityType` | No (default `\"ORGANIZATION\"`) | string | `\"ORGANIZATION\"` — applies across every event. `\"EVENT\"` — applies to one event only; requires `scopeId`. |\n| `scopeId` | Required when `scopeEntityType` is `\"EVENT\"`, else omit | uuid | Must be an event belonging to the caller's organization. |\n| `fieldNamespace` | No (default `\"org\"`) | string | Lowercase, starts with a letter, max 50 chars. `system` and `app:*` are reserved. |\n| `fieldKey` | Yes | string | Machine key, e.g. `dietary_notes`. Lowercase, starts with a letter, max 60 chars. |\n| `label` | Yes | string | Display name shown on forms. Max 120 chars. |\n| `helperText` | No | string | Help text shown beneath the field. |\n| `dataType` | Yes | string | `TEXT`, `LONGTEXT`, `NUMBER`, `DECIMAL`, `BOOLEAN`, `DATE`, `DATETIME`, `SELECT`, `EMAIL`, `PHONE`, `URL`. Only `TEXT`, `LONGTEXT`, `NUMBER`, `BOOLEAN`, `DATE`, `SELECT` are usable today. |\n| `widgetType` | No | string | Any recognized widget type (see table below for the suggested pairing per `dataType`). Auto-derived from `dataType`/`cardinality` when omitted or blank. |\n| `cardinality` | No | string | `\"SINGLE\"` or `\"LIST\"`. Auto-derived from `dataType`/`widgetType` when omitted or blank. |\n| `isMandatory` | No (default `false`) | bool | Whether a value is required to submit the form. |\n| `isPii` | No (default `false`) | bool | Flags this field as personal data. |\n| `status` | No (default `\"DRAFT\"`) | string | One of `\"DRAFT\"`, `\"ACTIVE\"`, `\"DEPRECATED\"`, `\"ARCHIVED\"`. |\n| `validationRules` | No | object | Extra rules; legal keys depend on `dataType` (e.g. `{\"maxLength\":200}` for `TEXT`). |\n| `uiHints` | No | object | `placeholder`, `helpLink`, `showInGrid`, `gridWidth`, `rows`, `currencyCode`. |\n| `groupKey` | No | string | Free-text section heading for grouping fields on a form. |\n| `orderIndex` | No (default `0`) | int | Sort position; lower shows first. |\n| `options` | Required for `SELECT`, else omit | array | Each item: `optionLabel` (required), `optionValue` (optional, auto-generated), `orderIndex`. |\n\n**`dataType` → suggested `widgetType`** (guidance only — not enforced)\n\n| dataType | Suggested widgetType |\n|---|---|\n| `TEXT` | `TEXT_INPUT` |\n| `LONGTEXT` | `TEXTAREA` |\n| `NUMBER` | `NUMBER_INPUT`, `STEPPER` |\n| `DECIMAL` | `NUMBER_INPUT`, `CURRENCY_INPUT` |\n| `BOOLEAN` | `CHECKBOX`, `TOGGLE`, `RADIO_YES_NO` |\n| `DATE` | `DATE_PICKER` |\n| `DATETIME` | `DATETIME_PICKER` |\n| `SELECT` | `RADIO_GROUP`, `DROPDOWN`, `CHECKBOX_GROUP`, `MULTI_SELECT` |\n| `EMAIL` | `EMAIL_INPUT` |\n| `PHONE` | `PHONE_INPUT` |\n| `URL` | `URL_INPUT` |\n\n**Response `200`** — the created definition (`CustomFieldDefinitionDto`): `id`,\n`organizationId`, `entityType`, `scopeEntityType`, `scopeId`, `fieldNamespace`,\n`fieldKey`, `label`, `helperText`, `dataType`, `widgetType`, `cardinality`,\n`isMandatory`, `isPii`, `status`, `validationRules` and\n`uiHints` (serialized as JSON strings), `groupKey`, `orderIndex`, and `options`\n(with resolved `optionValue`s).\n\n**Error codes (`400`)**\n\n| Code | Cause |\n|---|---|\n| `CUSTOM_FIELD_UNKNOWN_ENTITY_TYPE` | `entityType` isn't a recognized record type. |\n| `CUSTOM_FIELD_LIMIT_EXCEEDED` | Organization already has the max fields for this `entityType`. |\n| `CUSTOM_FIELD_DUPLICATE_KEY` | `fieldKey` already used for this org + entityType + namespace. |\n| `CUSTOM_FIELD_INVALID_DATATYPE` | `dataType` isn't a recognized value. |\n| `CUSTOM_FIELD_INVALID_WIDGET_TYPE` | `widgetType` isn't a recognized value. |\n| `CUSTOM_FIELD_INVALID_CARDINALITY` | `cardinality` isn't a recognized value. |\n| `CUSTOM_FIELD_INVALID_STATUS` | `status` is supplied and isn't one of the recognized values. |\n| `CUSTOM_FIELD_UNKNOWN_RULE_KEY` | `validationRules`/`uiHints` has a key not legal for `dataType`. |\n| `CUSTOM_FIELD_RESERVED_NAMESPACE` | `fieldNamespace` is `system` or starts with `app:`. |\n| `CUSTOM_FIELD_NO_ORGANIZATION_CONTEXT` | Caller has no resolvable organization context. |",
+        "operationId": "AeonPassGlobalAPIEndPointsCustomFieldsCreateCustomFieldDefinitionEndPoint",
+        "requestBody": {
+          "x-name": "CreateCustomFieldDefinitionEndPointRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCustomFieldDefinitionEndPointRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomFieldDefinitionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          },
+          {
+            "X-API-KEY": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "List an organization's custom fields for a record type.",
+        "description": "Returns every definition for the caller's organization and the given record type — the\nfield dictionary screen's data source.\n\n**Behavior**\n- Returns fields in every status (`DRAFT`, `ACTIVE`, `DEPRECATED`, `ARCHIVED`) by\n  default — pass `status` to narrow the result to one exact status server-side instead of\n  filtering client-side.\n- Ordered by `orderIndex` ascending.\n- The organization is always the caller's own — resolved from the Bearer token or\n  `X-API-KEY`, never supplied by the client.\n\n**Authentication:** Bearer token, or `X-API-KEY` for organization-to-organization callers.\n\n**Request**\n\n| Field | Required | Type | Notes |\n|---|---|---|---|\n| `entityType` | Yes (query) | string | Record type, e.g. `GUEST`. |\n| `status` | No (query) | string | Exact status to filter to, e.g. `ACTIVE`. Omit to return every status. |\n\n**Response `200`** — array of `CustomFieldDefinitionDto`, same shape as the create\nendpoint's response, each including its `options`.\n\n**Error codes (`400`)**\n\n| Code | Cause |\n|---|---|\n| `CUSTOM_FIELD_NO_ORGANIZATION_CONTEXT` | Caller has no resolvable organization context. |",
+        "operationId": "AeonPassGlobalAPIEndPointsCustomFieldsListCustomFieldDefinitionsEndPoint",
+        "parameters": [
+          {
+            "name": "entityType",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomFieldDefinitionDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          },
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/custom-fields/{entityType}/reorder": {
+      "put": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Reorder a record type's custom fields.",
+        "description": "Bulk-updates the sort position (`orderIndex`) of the given definitions in one call —\nthe field dictionary's drag-to-reorder list uses this.\n\n**Behavior**\n- Fields not listed in `ordering` keep their current position.\n- Every `id` must belong to the caller's organization + `entityType`; any that don't are\n  silently skipped rather than erroring.\n- The organization is always the caller's own — resolved from the Bearer token or\n  `X-API-KEY`, never supplied by the client.\n\n**Authentication:** Bearer token, or `X-API-KEY` for organization-to-organization callers.\n\n**Request body**\n\n| Field | Required | Type | Notes |\n|---|---|---|---|\n| `entityType` | Yes (route) | string | Record type the fields belong to, e.g. `GUEST`. |\n| `ordering` | Yes | array | One entry per field being repositioned: `{ \"id\": guid, \"orderIndex\": int }`. |\n\n**Response `200`** — `true` on success.\n\n**Error codes (`400`)**\n\n| Code | Cause |\n|---|---|\n| `CUSTOM_FIELD_NO_ORGANIZATION_CONTEXT` | Caller has no resolvable organization context. |",
+        "operationId": "AeonPassGlobalAPIEndPointsCustomFieldsReorderCustomFieldDefinitionsEndPoint",
+        "parameters": [
+          {
+            "name": "entityType",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "ReorderCustomFieldDefinitionsEndPointRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderCustomFieldDefinitionsEndPointRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          },
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/custom-fields/{id}": {
+      "delete": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Delete a custom field.",
+        "description": "Soft-deletes (`isactive = false`) a custom field definition.\n\n**Behavior**\n- Only permitted while the field is still `DRAFT` — GlobalDb has no way to confirm a\n  field past `DRAFT` is unused (values live in the database that owns the record, e.g.\n  EventDb for guests), so this endpoint refuses rather than risk deleting a field with\n  existing answers.\n- For an `ACTIVE` or `DEPRECATED` field, move it to `DEPRECATED`/`ARCHIVED` instead via\n  `PUT /portal/custom-fields/{id}/status` — its existing answers stay visible and\n  exportable.\n\n**Authentication:** Bearer token, or `X-API-KEY` for organization-to-organization callers.\n\n**Request**\n\n| Field | Required | Type | Notes |\n|---|---|---|---|\n| `id` | Yes (route) | guid | The definition to delete. |\n\n**Response:** `204 No Content` on success, with no response body. On failure, returns an\nerror response describing what went wrong.\n\n**Error codes (`400`)**\n\n| Code | Cause |\n|---|---|\n| `CUSTOM_FIELD_BREAKING_CHANGE` | Field is not `DRAFT`. |\n| `ORGANIZATION_ID_MISMATCH` | Caller's organization doesn't own this field. |\n\n**`404`** if `id` doesn't exist.",
+        "operationId": "AeonPassGlobalAPIEndPointsCustomFieldsDeleteCustomFieldDefinitionEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {}
+              },
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          },
+          {
+            "X-API-KEY": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Fetch a single custom field definition, with its options.",
+        "description": "Fetches one custom field definition by id, in any status.\n\n**Authentication:** Bearer token, or `X-API-KEY` for organization-to-organization callers.\n\n**Request**\n\n| Field | Required | Type | Notes |\n|---|---|---|---|\n| `id` | Yes (route) | guid | The definition to fetch. |\n\n**Response `200`** — `CustomFieldDefinitionDto`: `id`, `organizationId`, `entityType`,\n`scopeEntityType`, `scopeId`, `fieldNamespace`, `fieldKey`, `label`, `helperText`,\n`dataType`, `widgetType`, `cardinality`, `isMandatory`, `isPii`, `status`,\n`validationRules`/`uiHints` (serialized JSON strings), `groupKey`, `orderIndex`, and\n`options` (array of `{ id, optionValue, optionLabel, orderIndex }`).\n\n**Error codes (`400`)**\n\n| Code | Cause |\n|---|---|\n| `ORGANIZATION_ID_MISMATCH` | Caller's organization doesn't own this field. |\n\n**`404`** if `id` doesn't exist.",
+        "operationId": "AeonPassGlobalAPIEndPointsCustomFieldsGetCustomFieldDefinitionEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomFieldDefinitionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          },
+          {
+            "X-API-KEY": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Partially update a custom field — only the fields you send are touched.",
+        "description": "Updates only the fields present in the request body. This is a true partial update\n(JSON Merge Patch semantics), unlike `PUT /portal/custom-fields/{id}` which replaces\nthe whole mutable shape and requires every field on every call.\n\n**Every field is a plain value in the JSON — never a `{ \"isSet\": ..., \"value\": ... }`\nwrapper.** That shape only exists internally to tell \"omitted\" apart from \"sent as\nnull\"; sending it literally as JSON will fail to deserialize. For example, to rename a\nfield and touch nothing else:\n```json\n{\n  \"label\": \"Dietary Notes (internal)\"\n}\n```\n`fieldKey`, `dataType`, `validationRules`, etc. are simply absent from the body above —\nthey are left exactly as they are today.\n\n- **Omit a field** to leave it completely unchanged.\n- **Send a field with a value** to set/replace it.\n- **Send a field as explicit `null`** to clear it, where the domain allows it (e.g.\n  `helperText`, `groupKey`, `validationRules`, `uiHints`). Fields that can never be\n  empty on a definition (`fieldKey`, `label`, `dataType`, `isMandatory`, `isPii`,\n  `orderIndex`) reject an explicit `null` with a validation error instead of silently\n  ignoring it.\n- `widgetType` and `cardinality` are the two exceptions to that rule: they can never\n  truly be empty either (the entity always has a concrete widget), but an explicit\n  `null` there means \"re-derive the default from `dataType`\" rather than being\n  rejected — the same blank-means-auto-resolve convention `POST`/`PUT` use.\n- `options` is the other exception — it's a plain nested array, not the omit/value/null\n  tri-state, because there's no separate \"clear\" behavior to distinguish from \"replace\n  with nothing\". Omit the key to leave options untouched, send `[]` to remove all, or\n  send a non-empty array to fully replace the set.\n\n**Authentication:** Bearer token, or `X-API-KEY` for organization-to-organization callers.\n\n**Behavior**\n- Once the field is no longer `DRAFT`, changing `dataType`, `cardinality`, turning\n  `isMandatory` on, or removing an `options` entry that may already have answers is\n  refused with `CUSTOM_FIELD_BREAKING_CHANGE` — same rule `PUT` enforces. While still\n  `DRAFT`, anything goes.\n- `fieldKey` can be renamed freely (must stay unique for this org + entityType + namespace).\n- `dataType`, `widgetType`, and `cardinality` are each validated independently against\n  their own known set of values — there is no cross-field pairing requirement.\n\n**Request body**\n\n| Field | Clearable | Notes |\n|---|---|---|\n| `fieldKey` | No | Machine key. Renaming is a safe change. |\n| `label` | No | Display name. Max 120 chars. |\n| `helperText` | Yes | Help text shown beneath the field. |\n| `dataType` | No | Same closed list as create. Changing it post-`DRAFT` is refused. |\n| `widgetType` | Re-derives default | Any recognized widget type. |\n| `cardinality` | Re-derives default | `\"SINGLE\"` or `\"LIST\"`. Changing it post-`DRAFT` is refused. |\n| `isMandatory` | No | Turning on post-`DRAFT` is refused; turning off is always safe. |\n| `isPii` | No | Flags this field as personal data. |\n| `validationRules` | Yes | Full replacement of the whole object when sent; legal keys depend on `dataType`. |\n| `uiHints` | Yes | Full replacement of the whole object when sent. |\n| `groupKey` | Yes | Free-text section heading. |\n| `orderIndex` | No | Sort position. |\n| `options` | N/A (see above) | `null`/omit = untouched, `[]` = remove all, non-empty = full replace. |\n\n**Response `200`** — the patched definition (`CustomFieldDefinitionDto`), same shape as\nthe create/update endpoints' response.\n\n**Error codes (`400`)**\n\n| Code | Cause |\n|---|---|\n| `CUSTOM_FIELD_DUPLICATE_KEY` | New `fieldKey` collides with another field in this org + entityType + namespace. |\n| `CUSTOM_FIELD_INVALID_DATATYPE` | `dataType` isn't a recognized value. |\n| `CUSTOM_FIELD_INVALID_WIDGET_TYPE` | `widgetType` isn't a recognized value. |\n| `CUSTOM_FIELD_INVALID_CARDINALITY` | `cardinality` isn't a recognized value. |\n| `CUSTOM_FIELD_UNKNOWN_RULE_KEY` | `validationRules`/`uiHints` has a key not legal for `dataType`. |\n| `CUSTOM_FIELD_BREAKING_CHANGE` | Data type/cardinality/mandatory/option removal attempted on a non-DRAFT field. |\n| `ORGANIZATION_ID_MISMATCH` | Caller's organization doesn't own this field. |\n\n**`404`** if `id` doesn't exist.",
+        "operationId": "AeonPassGlobalAPIEndPointsCustomFieldsPatchCustomFieldDefinitionEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "PatchCustomFieldDefinitionEndPointRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchCustomFieldDefinitionEndPointRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomFieldDefinitionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          },
+          {
+            "X-API-KEY": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Update a custom field's shape.",
+        "description": "Updates label, help text, rules, options and ordering for an existing custom field.\nThis is a full update of the mutable shape — send every field, not just the ones\nchanging.\n\n**Behavior**\n- `fieldKey` can be renamed freely (must stay unique for this org + entityType + namespace).\n- Once the field is no longer `DRAFT`, changing `dataType`, `cardinality`, turning\n  `isMandatory` on, or removing an `options` entry that may already have answers is\n  refused with `CUSTOM_FIELD_BREAKING_CHANGE` — deprecate the field (via\n  `PUT /portal/custom-fields/{id}/status`) and create a replacement instead. While\n  still `DRAFT`, anything goes.\n- `options`: omit the property (or send `null`) to leave options untouched; send an\n  empty array to remove all options; send a non-empty array to fully replace the set —\n  include an existing option's `id` to keep it, leave it out to delete it.\n- `widgetType` and `cardinality` are both optional — when either is blank, a sensible\n  default is resolved from `dataType` (and from the other of the pair, if given), the\n  same way as create. Each of `dataType`/`widgetType`/`cardinality` is validated\n  independently against its own known set of values — there is no cross-field pairing\n  requirement between them.\n\n**Authentication:** Bearer token, or `X-API-KEY` for organization-to-organization callers.\n\n**Request body**\n\n| Field | Required | Type | Notes |\n|---|---|---|---|\n| `id` | Yes (route) | guid | The definition being updated. |\n| `fieldKey` | Yes | string | Machine key. Renaming is a safe change. |\n| `label` | Yes | string | Display name. Max 120 chars. |\n| `helperText` | No | string | Help text shown beneath the field. |\n| `dataType` | Yes | string | Same closed list as create. Changing it post-`DRAFT` is refused. |\n| `widgetType` | No | string | Any recognized widget type. Auto-derived when omitted or blank. Changing only the widget never invalidates data. |\n| `cardinality` | No | string | Auto-derived when omitted or blank. Changing it post-`DRAFT` is refused. |\n| `isMandatory` | No (default `false`) | bool | Turning on post-`DRAFT` is refused; turning off is always safe. |\n| `isPii` | No (default `false`) | bool | Flags this field as personal data. |\n| `validationRules` | No | object | Full replacement; omit/null clears all rules. |\n| `uiHints` | No | object | Full replacement; omit/null clears all hints. |\n| `groupKey` | No | string | Free-text section heading. |\n| `orderIndex` | No (default `0`) | int | Sort position. |\n| `options` | No | array or `null` | `null`/omit = untouched, `[]` = remove all, non-empty = full replace. |\n\n**Response `200`** — the updated definition (`CustomFieldDefinitionDto`), same shape as\nthe create endpoint's response.\n\n**Error codes (`400`)**\n\n| Code | Cause |\n|---|---|\n| `CUSTOM_FIELD_DUPLICATE_KEY` | New `fieldKey` collides with another field in this org + entityType + namespace. |\n| `CUSTOM_FIELD_INVALID_DATATYPE` | `dataType` isn't a recognized value. |\n| `CUSTOM_FIELD_INVALID_WIDGET_TYPE` | `widgetType` isn't a recognized value. |\n| `CUSTOM_FIELD_INVALID_CARDINALITY` | `cardinality` isn't a recognized value. |\n| `CUSTOM_FIELD_UNKNOWN_RULE_KEY` | `validationRules`/`uiHints` has a key not legal for `dataType`. |\n| `CUSTOM_FIELD_BREAKING_CHANGE` | Data type/cardinality/mandatory/option removal attempted on a non-DRAFT field. |\n| `ORGANIZATION_ID_MISMATCH` | Caller's organization doesn't own this field. |\n\n**`404`** if `id` doesn't exist.",
+        "operationId": "AeonPassGlobalAPIEndPointsCustomFieldsUpdateCustomFieldDefinitionEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "UpdateCustomFieldDefinitionEndPointRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCustomFieldDefinitionEndPointRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomFieldDefinitionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          },
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/custom-fields/{id}/status": {
+      "put": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Change a custom field's status.",
+        "description": "Sets a definition's status to one of the recognized values — the field dictionary's\nstatus control uses this.\n\n**Behavior**\n- `status` must be one of `DRAFT`, `ACTIVE`, `DEPRECATED`, `ARCHIVED` (also listed at\n  `GET /portal/custom-fields/schema`). There is no required transition order — any of\n  the four may move to any other.\n- `DRAFT` remains the one status the platform treats specially: while a definition holds\n  it, shape changes via `PUT`/`PATCH /portal/custom-fields/{id}` are unrestricted. Moving\n  it to any other status turns on the breaking-change protection on those endpoints.\n\n**Authentication:** Bearer token, or `X-API-KEY` for organization-to-organization callers.\n\n**Request body**\n\n| Field | Required | Type | Notes |\n|---|---|---|---|\n| `id` | Yes (route) | guid | The definition being updated. |\n| `status` | Yes | string | One of `\"DRAFT\"`, `\"ACTIVE\"`, `\"DEPRECATED\"`, `\"ARCHIVED\"`. |\n\n**Response `200`** — the definition with its new `status` (`CustomFieldDefinitionDto`).\n\n**Error codes (`400`)**\n\n| Code | Cause |\n|---|---|\n| `CUSTOM_FIELD_INVALID_STATUS` | `status` is empty or isn't one of the recognized values. |\n| `ORGANIZATION_ID_MISMATCH` | Caller's organization doesn't own this field. |\n\n**`404`** if `id` doesn't exist.",
+        "operationId": "AeonPassGlobalAPIEndPointsCustomFieldsChangeCustomFieldDefinitionStatusEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "ChangeCustomFieldDefinitionStatusEndPointRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeCustomFieldDefinitionStatusEndPointRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomFieldDefinitionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          },
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/custom-fields/schema": {
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Fetch the custom field data type / widget / rule-key matrix.",
+        "description": "Static metadata describing what values are legal when defining a custom field — call\nthis before Create/Update/Patch to build a valid request rather than hardcoding the matrix.\n\n**Behavior:** no database access; purely reflects the platform's code constants. Same\nresult for every caller.\n\n**Authentication:** Bearer token, or `X-API-KEY` for organization-to-organization callers.\n\n**Request:** none.\n\n**Response `200`** — `CustomFieldSchemaDto`:\n\n| Field | Type | Contents |\n|---|---|---|\n| `dataTypes` | string[] | All 11 planned data types. |\n| `phase1SupportedDataTypes` | string[] | The subset currently usable: `TEXT`, `LONGTEXT`, `NUMBER`, `BOOLEAN`, `DATE`, `SELECT`. |\n| `widgetTypes` | string[] | All 17 widget types. |\n| `cardinalities` | string[] | `[\"SINGLE\", \"LIST\"]`. |\n| `statuses` | string[] | The full set of recognized statuses: `[\"DRAFT\", \"ACTIVE\", \"DEPRECATED\", \"ARCHIVED\"]` — see `PUT /portal/custom-fields/{id}/status`. |\n| `uiHintKeys` | string[] | Recognized `uiHints` keys: `placeholder`, `helpLink`, `showInGrid`, `gridWidth`, `rows`, `currencyCode`. |\n| `legalWidgetsByDataType` | object | Map of `dataType` → array of legal `widgetType` values. |\n| `legalValidationRuleKeysByDataType` | object | Map of `dataType` → array of legal `validationRules` keys. |",
+        "operationId": "AeonPassGlobalAPIEndPointsCustomFieldsGetCustomFieldSchemaEndPoint",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomFieldSchemaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          },
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateCustomFieldDefinitionEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entityType": {
+            "type": "string"
+          },
+          "scopeEntityType": {
+            "type": "string",
+            "nullable": true
+          },
+          "scopeId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "fieldNamespace": {
+            "type": "string"
+          },
+          "fieldKey": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "helperText": {
+            "type": "string",
+            "nullable": true
+          },
+          "dataType": {
+            "type": "string"
+          },
+          "widgetType": {
+            "type": "string",
+            "nullable": true
+          },
+          "cardinality": {
+            "type": "string",
+            "nullable": true
+          },
+          "isMandatory": {
+            "type": "boolean"
+          },
+          "isPii": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "validationRules": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {}
+          },
+          "uiHints": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {}
+          },
+          "groupKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "orderIndex": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomFieldOptionInputDto"
+            }
+          }
+        }
+      },
+      "CustomFieldDefinitionDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "organizationId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "entityType": {
+            "type": "string"
+          },
+          "scopeEntityType": {
+            "type": "string"
+          },
+          "scopeId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "fieldNamespace": {
+            "type": "string"
+          },
+          "fieldKey": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "helperText": {
+            "type": "string",
+            "nullable": true
+          },
+          "dataType": {
+            "type": "string"
+          },
+          "widgetType": {
+            "type": "string"
+          },
+          "cardinality": {
+            "type": "string"
+          },
+          "isMandatory": {
+            "type": "boolean"
+          },
+          "isPii": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "validationRules": {
+            "type": "string",
+            "nullable": true
+          },
+          "uiHints": {
+            "type": "string",
+            "nullable": true
+          },
+          "groupKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "orderIndex": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomFieldOptionDto"
+            }
+          }
+        }
+      },
+      "ReorderCustomFieldDefinitionsEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ordering": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomFieldOrderItemDto"
+            }
+          }
+        }
+      },
+      "PatchCustomFieldDefinitionEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fieldKey": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
+          },
+          "label": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
+          },
+          "helperText": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
+          },
+          "dataType": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
+          },
+          "widgetType": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
+          },
+          "cardinality": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
+          },
+          "isMandatory": {
+            "$ref": "#/components/schemas/PatchFieldOfNullableOfBoolean"
+          },
+          "isPii": {
+            "$ref": "#/components/schemas/PatchFieldOfNullableOfBoolean"
+          },
+          "validationRules": {
+            "$ref": "#/components/schemas/PatchFieldOfDictionaryOfStringAndObject"
+          },
+          "uiHints": {
+            "$ref": "#/components/schemas/PatchFieldOfDictionaryOfStringAndObject"
+          },
+          "groupKey": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
+          },
+          "orderIndex": {
+            "$ref": "#/components/schemas/PatchFieldOfNullableOfInt32"
+          },
+          "options": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/CustomFieldOptionInputDto"
+            }
+          }
+        }
+      },
+      "UpdateCustomFieldDefinitionEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fieldKey": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "helperText": {
+            "type": "string",
+            "nullable": true
+          },
+          "dataType": {
+            "type": "string"
+          },
+          "widgetType": {
+            "type": "string",
+            "nullable": true
+          },
+          "cardinality": {
+            "type": "string",
+            "nullable": true
+          },
+          "isMandatory": {
+            "type": "boolean"
+          },
+          "isPii": {
+            "type": "boolean"
+          },
+          "validationRules": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {}
+          },
+          "uiHints": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {}
+          },
+          "groupKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "orderIndex": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "options": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/CustomFieldOptionInputDto"
+            }
+          }
+        }
+      },
+      "ChangeCustomFieldDefinitionStatusEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "CustomFieldSchemaDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "dataTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "phase1SupportedDataTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "widgetTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cardinalities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "uiHintKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "legalWidgetsByDataType": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "legalValidationRuleKeysByDataType": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "CustomFieldOptionInputDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "optionLabel": {
+            "type": "string"
+          },
+          "optionValue": {
+            "type": "string",
+            "nullable": true
+          },
+          "orderIndex": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "CustomFieldOptionDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "optionValue": {
+            "type": "string"
+          },
+          "optionLabel": {
+            "type": "string"
+          },
+          "orderIndex": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "CustomFieldOrderItemDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "orderIndex": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "PatchFieldOfString": {
+        "type": "string",
+        "nullable": true,
+        "additionalProperties": false
+      },
+      "PatchFieldOfNullableOfBoolean": {
+        "type": "boolean",
+        "nullable": true,
+        "additionalProperties": false
+      },
+      "PatchFieldOfDictionaryOfStringAndObject": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "isSet": {
+            "type": "boolean"
+          },
+          "value": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {}
+          }
+        }
+      },
+      "PatchFieldOfNullableOfInt32": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": true,
+        "additionalProperties": false
+      }
+    }
+  }
+}

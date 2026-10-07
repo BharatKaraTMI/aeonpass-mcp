@@ -139,6 +139,7 @@ Two things cost real debugging time; both are load-bearing:
 |------|-------------|
 | `get_event` | Get event details by ID |
 | `list_guests` | List, search, and filter guests for an event (paginated) |
+| `get_guest` | Get one guest, including custom field values |
 | `create_guest` | Add a guest to an event, optionally issuing an invitation |
 | `update_guest` | Full update of guest details or invitation |
 | `patch_guest` | Partial update — only the fields you pass are changed |
@@ -157,7 +158,34 @@ Two things cost real debugging time; both are load-bearing:
 | `update_contact` | Update contact details |
 | `delete_contact` | Soft-delete a contact |
 | `send_message_to_contacts` | Message contacts via InApp / SMS / Email |
-| `upload_contacts` | Bulk upsert contacts from a list |
+| `upload_contacts` | Bulk upsert contacts from a list — all-or-nothing |
+
+`upload_contacts` saves nothing if any row fails validation; the failing rows
+come back in `errorItems` with per-field errors.
+
+### Custom fields
+
+Organization-defined fields per record type (`GUEST`, `CONTACT`, `EVENT`,
+`ORGANIZATION`, `TECHAEON`).
+
+| Tool | Description |
+|------|-------------|
+| `list_custom_fields` | List definitions for a record type |
+| `get_custom_field` | Get one definition with its options |
+| `get_custom_field_schema` | Legal data types, widgets, and rule keys |
+| `create_custom_field` | Define a field (starts as `DRAFT`) |
+| `update_custom_field` | Full replace of a field's shape |
+| `patch_custom_field` | Partial update — only the fields you pass |
+| `update_custom_field_status` | Move between `DRAFT` / `ACTIVE` / `DEPRECATED` / `ARCHIVED` |
+| `reorder_custom_fields` | Set sort order for several fields at once |
+| `delete_custom_field` | Soft-delete a `DRAFT` field |
+
+Guest values are written through `create_guest`, `update_guest` and
+`patch_guest` as `customFields`, keyed by the definition's **id** (not its
+`fieldKey`), and read back with `get_guest`. They are merged by key on update
+as well as patch, so omitting `customFields` never clears anything. Once a field
+leaves `DRAFT`, edits that could invalidate existing answers are refused and it
+can no longer be deleted — retire it by status instead.
 
 > `send_invite`, `send_message_to_guests`, and `send_message_to_contacts` reach
 > real people over SMS and email, and `sendToAll` is not scoped. Treat them as
@@ -198,9 +226,12 @@ on an SMS reply and on a `sendFrom: "Contact"` send, but their *user* id when
 they sent from their own app.
 
 `mark_conversation_read` always records the organization as the reader; there is
-no contact-side mark-read on this surface. Until API-key management ships a key
-acts as the organization's owner account, so it also clears the badge that owner
-sees in the web app — the API and the app share one read state.
+no contact-side mark-read on this surface. The read state is **your key's own**:
+each API key has one, separate from every person's, so marking a thread read
+does not clear anyone's badge in the web app, and someone reading it there does
+not change your key's unread count. Likewise, messages you send as the
+organization are attributed to the key itself — `senderType: "ApiKey"`, with
+the key's name as the sender.
 
 And the three reads — `list_conversations`, `get_conversation`, `list_messages`
 — take an optional `view` (`Auto` | `Organization` | `Contact`), which seat the
@@ -351,7 +382,7 @@ key is a parameter rather than a module-level env read, so each entrypoint
 decides where it comes from:
 
 ```
-src/api.ts     createClient(apiKey) → the 34 API calls, bound to that key
+src/api.ts     createClient(apiKey) → the 44 API calls, bound to that key
 src/realtime.ts SignalR chat subscriptions, keyed by sha256(apiKey) + scope
 src/server.ts  createServer(client) → registers the tools
 src/app.ts     Hono app; reads X-API-KEY per request

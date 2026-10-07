@@ -380,7 +380,7 @@
           "Portal"
         ],
         "summary": "Upload contact list.",
-        "description": "Bulk-creates or updates contacts for an organization from a parsed CSV row list.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- Each row is matched against existing contacts by phone/email; matches are updated, new entries are created.\n- Rows that fail validation are reported in `ErrorItems` without failing the rest of the batch.",
+        "description": "Bulk-creates or updates contacts for an organization from a parsed CSV row list.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Supported fields per row:** `FirstName` (required), `LastName`, `Email`, `Phone`, `DisplayName`,\n`Address`, `City`, `State`, `Country`, `Zip`, `SocialHandle`. Either `Phone` or `Email` is required.\n\n**Behavior:**\n- Each row is matched against existing contacts by phone/email; matches are updated, new entries are created.\n- When updating an existing contact, blank optional fields keep the contact's current value.\n- Rows that fail validation are reported in `ErrorItems` with per-field `Errors`; if any row fails, no contacts are saved.",
         "operationId": "AeonPassOrganizationAPIEndPointsContactsPortalPortalUploadContactByCSVEndPoint",
         "requestBody": {
           "x-name": "PortalUploadContactByCSVEndPointRequest",
@@ -447,57 +447,24 @@
   },
   "components": {
     "schemas": {
-      "PortalCreateContactEndPointRequest": {
+      "PortalListGuestGroupsEndPointResponse": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "phone": {
+          "id": {
             "type": "string",
+            "format": "guid"
+          },
+          "organizationId": {
+            "type": "string",
+            "format": "guid",
             "nullable": true
           },
-          "firstName": {
+          "groupName": {
             "type": "string"
           },
-          "lastName": {
-            "type": "string",
-            "nullable": true
-          },
-          "displayName": {
-            "type": "string",
-            "nullable": true
-          },
-          "email": {
-            "type": "string",
-            "nullable": true
-          },
-          "address": {
-            "type": "string",
-            "nullable": true
-          },
-          "state": {
-            "type": "string",
-            "nullable": true
-          },
-          "city": {
-            "type": "string",
-            "nullable": true
-          },
-          "country": {
-            "type": "string",
-            "nullable": true
-          },
-          "zip": {
-            "type": "string",
-            "nullable": true
-          },
-          "socialHandle": {
-            "type": "string",
-            "nullable": true
-          },
-          "profilePhoto": {
-            "type": "string",
-            "format": "binary",
-            "nullable": true
+          "isDefault": {
+            "type": "boolean"
           }
         }
       },
@@ -589,6 +556,340 @@
           }
         }
       },
+      "CommunicationType": {
+        "type": "integer",
+        "description": "",
+        "x-enumNames": [
+          "InApp",
+          "SMS",
+          "Email"
+        ],
+        "enum": [
+          1,
+          2,
+          3
+        ]
+      },
+      "UploadContactResponseDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "totalRecords": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "newRecords": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "updatedRecords": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "errorRecords": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "errorItems": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/ValidateContactResponseDto"
+            }
+          },
+          "commonErrors": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            }
+          }
+        }
+      },
+      "ValidateContactResponseDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "country": {
+            "type": "string",
+            "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "zip": {
+            "type": "string",
+            "nullable": true
+          },
+          "socialHandle": {
+            "type": "string",
+            "nullable": true
+          },
+          "duplicateContact": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DuplicateContact"
+              }
+            ]
+          },
+          "errors": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            }
+          }
+        }
+      },
+      "DuplicateContact": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ValidationError": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "nullable": true
+          },
+          "errorMessage": {
+            "type": "string",
+            "nullable": true
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "severity": {
+            "$ref": "#/components/schemas/ValidationSeverity"
+          }
+        }
+      },
+      "ValidationSeverity": {
+        "type": "integer",
+        "description": "",
+        "x-enumNames": [
+          "Error",
+          "Warning",
+          "Info"
+        ],
+        "enum": [
+          0,
+          1,
+          2
+        ]
+      },
+      "UploadContactByCsvDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "country": {
+            "type": "string",
+            "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "zip": {
+            "type": "string",
+            "nullable": true
+          },
+          "socialHandle": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "PortalCreateContactEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "country": {
+            "type": "string",
+            "nullable": true
+          },
+          "zip": {
+            "type": "string",
+            "nullable": true
+          },
+          "socialHandle": {
+            "type": "string",
+            "nullable": true
+          },
+          "profilePhoto": {
+            "type": "string",
+            "format": "binary",
+            "nullable": true
+          }
+        }
+      },
+      "PortalPagedResponseOfContactDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContactDto"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PortalPagination"
+          }
+        }
+      },
+      "PortalPagination": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "totalCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "PortalSendMessageToContactEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "messageBody": {
+            "type": "string"
+          },
+          "contactIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "guid"
+            }
+          },
+          "typeIds": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/CommunicationType"
+            }
+          }
+        }
+      },
       "PortalUpdateContactEndPointRequest": {
         "type": "object",
         "additionalProperties": false,
@@ -648,44 +949,6 @@
           }
         }
       },
-      "PortalPagedResponseOfContactDto": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ContactDto"
-            }
-          },
-          "pagination": {
-            "$ref": "#/components/schemas/PortalPagination"
-          }
-        }
-      },
-      "PortalSendMessageToContactEndPointRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "messageBody": {
-            "type": "string"
-          },
-          "contactIds": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "guid"
-            }
-          },
-          "typeIds": {
-            "type": "array",
-            "nullable": true,
-            "items": {
-              "$ref": "#/components/schemas/CommunicationType"
-            }
-          }
-        }
-      },
       "PortalUploadContactByCSVEndPointRequest": {
         "type": "object",
         "additionalProperties": false,
@@ -697,229 +960,20 @@
             }
           }
         }
+      }
+    },
+    "securitySchemes": {
+      "JWTBearerAuth": {
+        "type": "http",
+        "description": "Enter a JWT token to authorize the requests...",
+        "scheme": "Bearer",
+        "bearerFormat": "JWT"
       },
-      "UploadContactResponseDto": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "totalRecords": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "newRecords": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "updatedRecords": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "errorRecords": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "errorItems": {
-            "type": "array",
-            "nullable": true,
-            "items": {
-              "$ref": "#/components/schemas/ValidateContactResponseDto"
-            }
-          },
-          "commonErrors": {
-            "type": "array",
-            "nullable": true,
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            }
-          }
-        }
-      },
-      "PortalListGuestGroupsEndPointResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "guid"
-          },
-          "organizationId": {
-            "type": "string",
-            "format": "guid",
-            "nullable": true
-          },
-          "groupName": {
-            "type": "string"
-          },
-          "isDefault": {
-            "type": "boolean"
-          }
-        }
-      },
-      "PortalPagination": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "totalCount": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "page": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "pageSize": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "totalPages": {
-            "type": "integer",
-            "format": "int32"
-          }
-        }
-      },
-      "CommunicationType": {
-        "type": "integer",
-        "description": "",
-        "x-enumNames": [
-          "InApp",
-          "SMS",
-          "Email"
-        ],
-        "enum": [
-          1,
-          2,
-          3
-        ]
-      },
-      "UploadContactByCsvDto": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "firstName": {
-            "type": "string"
-          },
-          "lastName": {
-            "type": "string",
-            "nullable": true
-          },
-          "phone": {
-            "type": "string",
-            "nullable": true
-          },
-          "email": {
-            "type": "string",
-            "nullable": true
-          },
-          "state": {
-            "type": "string",
-            "nullable": true
-          },
-          "country": {
-            "type": "string",
-            "nullable": true
-          }
-        }
-      },
-      "ValidateContactResponseDto": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "phone": {
-            "type": "string",
-            "nullable": true
-          },
-          "firstName": {
-            "type": "string"
-          },
-          "lastName": {
-            "type": "string",
-            "nullable": true
-          },
-          "email": {
-            "type": "string",
-            "nullable": true
-          },
-          "state": {
-            "type": "string",
-            "nullable": true
-          },
-          "country": {
-            "type": "string",
-            "nullable": true
-          },
-          "duplicateContact": {
-            "nullable": true,
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/DuplicateContact"
-              }
-            ]
-          },
-          "errors": {
-            "type": "array",
-            "nullable": true,
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            }
-          }
-        }
-      },
-      "ValidationError": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "identifier": {
-            "type": "string",
-            "nullable": true
-          },
-          "errorMessage": {
-            "type": "string",
-            "nullable": true
-          },
-          "errorCode": {
-            "type": "string",
-            "nullable": true
-          },
-          "severity": {
-            "$ref": "#/components/schemas/ValidationSeverity"
-          }
-        }
-      },
-      "DuplicateContact": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "firstName": {
-            "type": "string",
-            "nullable": true
-          },
-          "lastName": {
-            "type": "string",
-            "nullable": true
-          },
-          "phone": {
-            "type": "string",
-            "nullable": true
-          },
-          "email": {
-            "type": "string",
-            "nullable": true
-          }
-        }
-      },
-      "ValidationSeverity": {
-        "type": "integer",
-        "description": "",
-        "x-enumNames": [
-          "Error",
-          "Warning",
-          "Info"
-        ],
-        "enum": [
-          0,
-          1,
-          2
-        ]
+      "X-API-KEY": {
+        "type": "apiKey",
+        "description": "API key for portal/integration endpoints. Include as the `X-API-KEY` request header.",
+        "name": "X-API-KEY",
+        "in": "header"
       }
     }
   }

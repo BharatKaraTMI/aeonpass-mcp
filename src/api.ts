@@ -1,5 +1,5 @@
 /** Also the SignalR hub host — see realtime.ts. */
-export const BASE_URL = "https://apv2-gatewayapp-stage-westus3.azurewebsites.net";
+export const BASE_URL = "https://apv2-gatewayapp-dev-westus3.azurewebsites.net";
 
 /** One API call, recorded without credentials or personal data. */
 export interface CallLog {
@@ -55,6 +55,18 @@ export function logToStderr(entry: CallLog): void {
  */
 export type ConversationSide = "Auto" | "Organization" | "Contact";
 
+/**
+ * A custom field option as sent on create/update/patch. `optionValue` is
+ * generated from `optionLabel` when omitted; `id` keeps an existing option
+ * through a full replace of the set.
+ */
+export interface CustomFieldOptionInput {
+  id?: string;
+  optionLabel: string;
+  optionValue?: string;
+  orderIndex?: number;
+}
+
 export interface ClientOptions {
   /** Receives one record per call. Pass `() => {}` to disable. */
   onCall?: (entry: CallLog) => void;
@@ -62,7 +74,7 @@ export interface ClientOptions {
 
 /**
  * Records the *shape* of arguments for calls where that matters after the fact
- * — bulk sends, deletes, and chat sends. Deliberately omits message bodies,
+ * — bulk sends, deletes, chat sends, and custom field changes. Deliberately omits message bodies,
  * recipient lists, attachments and contact records: those are the PII, and
  * logs are not the place for them.
  */
@@ -92,7 +104,15 @@ function callMeta(method: string, args: unknown[]): Record<string, unknown> | un
       return { generated: a?.noOfTechaeons };
     case "deleteTechaeon":
     case "deleteContact":
+    case "deleteCustomField":
       return { id: a };
+    // Definitions are schema, not PII, but a status change or a shape edit past
+    // DRAFT is what you would want to trace afterwards.
+    case "changeCustomFieldStatus":
+      return { id: a, status: b };
+    case "patchCustomField":
+    case "updateCustomField":
+      return { id: a, fields: Object.keys((b as object) ?? {}) };
     case "deleteGuest":
       return { id: a, invitationId: b };
     // Field *names* only — the values are guest PII.
@@ -360,7 +380,24 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
     },
 
     // ── Guests ──
+    //
+    // `customFields` on create/update/patch is an object keyed by custom field
+    // *definition id* (from `listCustomFields("GUEST")`), never by `fieldKey`.
+    // Omitting it entirely leaves every custom field value alone on all three;
+    // on update and patch, the keys present are merged rather than replacing
+    // the set, even though PUT replaces the rest of the guest.
 
+    /**
+     * The one guest read that returns custom field values, resolved to
+     * `{ id, fieldKey, label, dataType, value }`. `invitationId` scopes the
+     * returned `invitation` for a guest with more than one; it defaults to the
+     * current one.
+     */
+    getGuest(id: string, invitationId?: string) {
+      return request("GET", `/api/portal/guest/${id}`, undefined, { invitationId });
+    },
+
+    /** Every currently-ACTIVE mandatory GUEST custom field must be in `customFields`. */
     createGuest(params: {
       eventId: string;
       firstName: string;
@@ -377,6 +414,7 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
         guestPasses?: number;
         isUnlimited?: boolean;
       };
+      customFields?: Record<string, unknown>;
     }) {
       return request("POST", "/api/portal/guest", params);
     },
@@ -416,6 +454,7 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
           isUnlimited?: boolean;
           statusId?: string;
         };
+        customFields?: Record<string, unknown>;
       }
     ) {
       return request("PUT", `/api/portal/guest/${id}`, params);
@@ -430,6 +469,10 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
      * The spec types these fields as `PatchFieldOfNullableOfX`, but that is the
      * C# wrapper leaking into the generated schema; the endpoint description is
      * explicit that plain values go on the wire, not `{ isSet, value }`.
+     *
+     * `customFields` sits outside that tri-state: it is a plain object, merged
+     * by key. A value sets that field, an explicit `null` clears it, and keys
+     * not present are untouched.
      */
     patchGuest(
       id: string,
@@ -450,6 +493,7 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
           isUnlimited?: boolean | null;
           statusId?: string;
         };
+        customFields?: Record<string, unknown>;
       }
     ) {
       return request("PATCH", `/api/portal/guest/${id}`, params);
@@ -551,14 +595,25 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
       return request("POST", "/api/portal/contact/send-message", params);
     },
 
+    /**
+     * All-or-nothing: if any row fails validation, no contacts are saved, and
+     * the failures come back in `errorItems` with per-field `errors`. When a
+     * row matches an existing contact, blank optional fields keep its current
+     * value rather than clearing it.
+     */
     uploadContacts(params: {
       contacts: Array<{
         firstName: string;
         lastName?: string;
+        displayName?: string;
         phone?: string;
         email?: string;
+        address?: string;
+        city?: string;
         state?: string;
         country?: string;
+        zip?: string;
+        socialHandle?: string;
       }>;
     }) {
       return request("POST", "/api/portal/contact/upload-list", params);
@@ -579,6 +634,16 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
      * is unchanged. `view: "Contact"` reports `callerRole: "CONTACT"` for the
      * thread's own contact and needs no id of its own; every other field still
      * comes back as the organization sees it.
+     *
+     * `lastMessage` is a preview, and its `attachments` is **always null here**
+     * — not "this message had no files", but "this projection does not carry
+     * them". Verified on stage: a message whose send response returned an
+     * attachment comes back from this call with the field nulled out.
+     *
+     * The nulling belongs to the single-conversation reads — this and
+     * `getConversationWithContact`. `listConversations` populates the field, so
+     * `null` there really does mean "no files". `listMessages` is the
+     * authoritative read either way.
      */
     getConversation(id: string, view?: ConversationSide) {
       return request("GET", `/api/portal/conversations/${id}`, undefined, { view });
@@ -587,6 +652,10 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
     /**
      * Get-or-create the thread with one contact. `isCreateNew` is a required
      * query parameter, not an optional flag — the API has no default for it.
+     *
+     * Takes no `view`: `callerRole` is always `ORG_MEMBER` here, since a key
+     * reads as its own organization. Shares `getConversation`'s projection, so
+     * `lastMessage.attachments` is nulled out here too.
      */
     getConversationWithContact(contactId: string, isCreateNew: boolean) {
       return request("GET", `/api/portal/conversations/with-contact/${contactId}`, undefined, {
@@ -600,6 +669,9 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
      * from the contact's seat, and without an id there is no seat to name
      * (`400 CONTACT_ID_REQUIRED`). A contact of another organization is not an
      * error here, just an empty page.
+     *
+     * Unlike the single-conversation reads, this one *does* populate
+     * `lastMessage.attachments`, so `null` here means the message has no files.
      */
     listConversations(params: {
       pageNo?: number;
@@ -624,6 +696,10 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
      * to `getConversation`. A message has no `callerRole` of its own, so every
      * value returns the same page — `isRead` is the organization's receipt on
      * all of them. It is a no-op kept for symmetry, not a filter.
+     *
+     * This is the only read that reports a message's attachments. They come
+     * back inline on each message, and the field is **null, not `[]`**, when a
+     * message has no files — test for length, not for presence.
      */
     listMessages(
       conversationId: string,
@@ -652,6 +728,12 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
      * than one we default. (The token surface leaves it nullable — null there
      * means "infer from the caller" — but this client only speaks portal.)
      *
+     * `sendFrom: "Organization"` is sent *by the key itself*: the stored message
+     * has `senderType: "ApiKey"`, `senderId` = the key's id, and the key's name
+     * in `senderApiKeyName` (copied to `sender.firstName`). It used to be
+     * attributed to the organization's owner account; messages from before
+     * keys had their own identity still are — history is not rewritten.
+     *
      * `sendFrom: "Contact"` attributes the message to the contact, the way an
      * inbound SMS reply is stored, and dispatches nothing — inApp/inSMS/inEmail
      * describe how to *reach* the contact, so they only mean something when
@@ -667,6 +749,11 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
      * stored and pushed to live subscribers, but nothing is dispatched to the
      * contact, and the 200 is indistinguishable from a delivered send apart
      * from the flags echoed on `lastMessage`.
+     *
+     * The `lastMessage` returned here *does* carry the stored attachments —
+     * the one projection of it that does, since the conversation reads null
+     * the field out. Each is assigned a fresh id at store time; the upload's
+     * id is not reused, while `url` and `storageFileName` carry through.
      */
     sendChatMessage(params: {
       conversationId: string;
@@ -691,6 +778,11 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
     /**
      * Always records the *organization* as the reader, whichever way a realtime
      * connection is scoped — there is no contact-side mark-read on this surface.
+     * The read state is **this key's own**: every key has one, separate from
+     * every person's, so this no longer clears the owner's badge in the web app
+     * (it did while a key acted as the owner account), and a person reading the
+     * thread there does not move this key's `unreadCount`.
+     *
      * Takes no fields but still needs a JSON body, or the API answers 415;
      * `request` sends `{}` for a PUT, which satisfies that.
      */
@@ -727,9 +819,140 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
     listGuestGroups() {
       return request("GET", "/api/portal/guest-group/list");
     },
+
+    // ── Custom fields ──
+    //
+    // The Global API's `/api/portal/custom-fields` surface: per-organization
+    // field definitions for a record type (`GUEST`, `CONTACT`, `EVENT`,
+    // `ORGANIZATION`, `TECHAEON`). Values live on the record itself — today
+    // that is the guest endpoints' `customFields`, keyed by definition id.
+    //
+    // `DRAFT` is the status that matters: while a field holds it, any shape
+    // change is allowed. Past it, changing `dataType` or `cardinality`, turning
+    // `isMandatory` on, or removing an option fails `CUSTOM_FIELD_BREAKING_CHANGE`.
+    //
+    // `validationRules` and `uiHints` are objects on the way in but come back
+    // as JSON *strings* on `CustomFieldDefinitionDto`.
+
+    /** Every status by default; `status` narrows to one exactly, server-side. */
+    listCustomFields(entityType: string, status?: string) {
+      return request("GET", "/api/portal/custom-fields", undefined, { entityType, status });
+    },
+
+    getCustomField(id: string) {
+      return request("GET", `/api/portal/custom-fields/${id}`);
+    },
+
+    /** The legal dataType / widgetType / rule-key matrix. Static, same for every caller. */
+    getCustomFieldSchema() {
+      return request("GET", "/api/portal/custom-fields/schema");
+    },
+
+    /**
+     * Starts in `DRAFT` unless `status` says otherwise — and starting anywhere
+     * else switches on breaking-change protection immediately. `options` is
+     * required for `SELECT`; `widgetType` and `cardinality` are derived from
+     * `dataType` when omitted.
+     */
+    createCustomField(params: {
+      entityType: string;
+      fieldKey: string;
+      label: string;
+      dataType: string;
+      scopeEntityType?: string;
+      scopeId?: string;
+      fieldNamespace?: string;
+      helperText?: string;
+      widgetType?: string;
+      cardinality?: string;
+      isMandatory?: boolean;
+      isPii?: boolean;
+      status?: string;
+      validationRules?: Record<string, unknown>;
+      uiHints?: Record<string, unknown>;
+      groupKey?: string;
+      orderIndex?: number;
+      options?: CustomFieldOptionInput[];
+    }) {
+      return request("POST", "/api/portal/custom-fields", params);
+    },
+
+    /**
+     * Full replace of the mutable shape — send every field, not just the
+     * changing ones. Omitted `validationRules`/`uiHints` are *cleared*.
+     * `options`: omit to leave them, `[]` to remove all, otherwise a full
+     * replace where an existing option is kept only if its `id` is included.
+     */
+    updateCustomField(
+      id: string,
+      params: {
+        fieldKey: string;
+        label: string;
+        dataType: string;
+        helperText?: string;
+        widgetType?: string;
+        cardinality?: string;
+        isMandatory?: boolean;
+        isPii?: boolean;
+        validationRules?: Record<string, unknown>;
+        uiHints?: Record<string, unknown>;
+        groupKey?: string;
+        orderIndex?: number;
+        options?: CustomFieldOptionInput[];
+      }
+    ) {
+      return request("PUT", `/api/portal/custom-fields/${id}`, params);
+    },
+
+    /**
+     * JSON Merge Patch, as `patchGuest`: omitted fields are untouched and an
+     * explicit `null` clears a clearable one. The spec's `PatchFieldOf…` and
+     * `{ isSet, value }` types are the C# wrapper leaking again — plain values
+     * go on the wire. `null` on `widgetType`/`cardinality` means "re-derive
+     * from dataType", not "clear".
+     */
+    patchCustomField(
+      id: string,
+      params: {
+        fieldKey?: string;
+        label?: string;
+        helperText?: string | null;
+        dataType?: string;
+        widgetType?: string | null;
+        cardinality?: string | null;
+        isMandatory?: boolean;
+        isPii?: boolean;
+        validationRules?: Record<string, unknown> | null;
+        uiHints?: Record<string, unknown> | null;
+        groupKey?: string | null;
+        orderIndex?: number;
+        options?: CustomFieldOptionInput[];
+      }
+    ) {
+      return request("PATCH", `/api/portal/custom-fields/${id}`, params);
+    },
+
+    /** Any status may move to any other; there is no transition order. */
+    changeCustomFieldStatus(id: string, status: string) {
+      return request("PUT", `/api/portal/custom-fields/${id}/status`, { status });
+    },
+
+    /** Ids not of this org + entityType are skipped silently, not rejected. */
+    reorderCustomFields(entityType: string, ordering: Array<{ id: string; orderIndex: number }>) {
+      return request("PUT", `/api/portal/custom-fields/${entityType}/reorder`, { ordering });
+    },
+
+    /**
+     * `DRAFT` fields only — the API cannot see whether a field past `DRAFT`
+     * already has answers, so it refuses rather than risk orphaning them.
+     * Retire one with `changeCustomFieldStatus` instead.
+     */
+    deleteCustomField(id: string) {
+      return request("DELETE", `/api/portal/custom-fields/${id}`);
+    },
   };
 
-  // Wrap every method once rather than at 34 call sites. Failures are recorded
+  // Wrap every method once rather than at 44 call sites. Failures are recorded
   // and rethrown — logging must never change behaviour.
   const instrumented = Object.fromEntries(
     Object.entries(methods).map(([name, fn]) => [

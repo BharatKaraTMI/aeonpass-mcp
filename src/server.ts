@@ -224,8 +224,23 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
   );
 
   server.tool(
+    "get_guest",
+    "Get one guest's full details by ID, including their invitation and their custom field values. This is the only guest read that returns custom fields: each comes back resolved as { id, fieldKey, label, dataType, value }, where id is the field definition id (the key you write it under). customFields is empty or absent when none are set.",
+    {
+      id: z.string().describe("Guest GUID"),
+      invitationId: z
+        .string()
+        .optional()
+        .describe("Return this invitation instead of the guest's current one, for a guest with more than one"),
+    },
+    async ({ id, invitationId }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.getGuest(id, invitationId), null, 2) }],
+    })
+  );
+
+  server.tool(
     "create_guest",
-    "Create a new guest for an event and optionally issue an invitation. groupId is required — use list_guest_groups to find valid IDs.",
+    "Create a new guest for an event and optionally issue an invitation. groupId is required — use list_guest_groups to find valid IDs. customFields is keyed by custom field DEFINITION ID (from list_custom_fields with entityType GUEST), not by fieldKey; every ACTIVE mandatory guest field must be included, or omit customFields entirely to set none.",
     {
       eventId: z.string().describe("Event GUID"),
       firstName: z.string().describe("Guest first name (required)"),
@@ -240,6 +255,10 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
       invitationDesignMappingId: z.string().optional().describe("Create an invitation using this design GUID"),
       invitationGuestPasses: z.number().optional().describe("Number of passes on the invitation"),
       invitationIsUnlimited: z.boolean().optional().describe("Unlimited passes on the invitation"),
+      customFields: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe('Custom field values keyed by definition id, e.g. { "<definitionId>": "Vegan" }'),
     },
     async ({ eventId, invitationDesignMappingId, invitationGuestPasses, invitationIsUnlimited, ...params }) => {
       const invitation = invitationDesignMappingId
@@ -253,7 +272,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "update_guest",
-    "Update an existing guest's details or invitation. groupId is required.",
+    "Update an existing guest's details or invitation. groupId is required. This replaces the guest record, EXCEPT customFields: those are merged by definition id — only the keys you send are validated and written, and omitting customFields leaves every existing value untouched.",
     {
       id: z.string().describe("Guest GUID"),
       eventId: z.string().describe("Event GUID"),
@@ -271,6 +290,10 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
       invitationGuestPasses: z.number().optional(),
       invitationIsUnlimited: z.boolean().optional(),
       invitationStatusId: z.string().optional().describe("New invitation status GUID"),
+      customFields: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe("Custom field values keyed by definition id. Merged: keys not sent are left as they are."),
     },
     async ({ id, invitationId, invitationDesignMappingId, invitationGuestPasses, invitationIsUnlimited, invitationStatusId, ...params }) => {
       const invitation =
@@ -302,6 +325,12 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
       invitationGuestPasses: z.number().nullable().optional(),
       invitationIsUnlimited: z.boolean().nullable().optional(),
       invitationStatusId: z.string().optional().describe("New invitation status GUID"),
+      customFields: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe(
+          "Custom field values keyed by definition id. Only the keys present are touched: a value sets that field, null clears it. Omit to change no custom fields."
+        ),
     },
     async ({
       id,
@@ -471,16 +500,21 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "upload_contacts",
-    "Bulk create or update contacts from a list. Matches existing contacts by phone/email and upserts. Returns counts of new/updated/error records.",
+    "Bulk create or update contacts from a list. Matches existing contacts by phone/email and upserts; on a match, blank optional fields keep the contact's current value. ALL-OR-NOTHING: if any row fails validation, no contacts are saved, and the failing rows come back in errorItems with per-field errors — fix those and resend the whole list. Each row needs firstName and a phone or email. Returns counts of new/updated/error records.",
     {
       contacts: z.array(
         z.object({
           firstName: z.string(),
           lastName: z.string().optional(),
+          displayName: z.string().optional(),
           phone: z.string().optional(),
           email: z.string().optional(),
+          address: z.string().optional(),
+          city: z.string().optional(),
           state: z.string().optional(),
           country: z.string().optional(),
+          zip: z.string().optional(),
+          socialHandle: z.string().optional(),
         })
       ).describe("List of contacts to import"),
     },
@@ -497,7 +531,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "list_conversations",
-    "List the organization's chat conversations, newest activity first. Returns { data: [...], pagination: { totalCount, page, pageSize, totalPages } }. Each conversation carries its contact, lastMessage, unreadCount, and isReadByUser. unreadCount is the organization's and spans the whole thread — the app's 'since you joined' cutoff needs a membership row, which an API key's identity does not have. lastMessage is null on a thread with no messages yet. To reach one known contact's thread prefer get_conversation_with_contact, which returns it directly and can create it; contactId here only filters an existing list.",
+    "List the organization's chat conversations, newest activity first. Returns { data: [...], pagination: { totalCount, page, pageSize, totalPages } }. Each conversation carries its contact, lastMessage, unreadCount, and isReadByUser. unreadCount is the organization's as THIS KEY sees it — every key has its own read state, separate from every person's — and spans the whole thread, since the app's 'since you joined' cutoff needs a membership row a key does not have. lastMessage is null on a thread with no messages yet. Its attachments ARE populated here — unlike get_conversation and get_conversation_with_contact, which always null the field out — so on this endpoint attachments: null genuinely means the message has no files. To reach one known contact's thread prefer get_conversation_with_contact, which returns it directly and can create it; contactId here only filters an existing list.",
     {
       pageNo: z.number().optional().describe("Page number (1-based, default 1)"),
       pageSize: z.number().optional().describe("Results per page (default 100)"),
@@ -526,7 +560,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "get_conversation",
-    "Get one conversation by ID, including its participants, last message, and current unread count. Must belong to your organization. unreadCount is the organization's view and counts either side, so a message recorded with sendFrom='Contact' raises it rather than clearing it. isReadByUser says whether the CONTACT has read your last message; it stays false on a thread whose contact has no registered account, since they have no way to record a read.",
+    "Get one conversation by ID, including its participants, last message, and current unread count. Must belong to your organization. unreadCount is the organization's as this key sees it (each key has its own read state, moved by mark_conversation_read) and counts either side, so a message recorded with sendFrom='Contact' raises it rather than clearing it. isReadByUser says whether the CONTACT has read your last message; it stays false on a thread whose contact has no registered account, since they have no way to record a read. lastMessage is a preview: its attachments is ALWAYS null here, which means this projection does not carry files, NOT that the message had none. The same is true of get_conversation_with_contact, but NOT of list_conversations, which does populate them. Read a message's real attachments with list_messages.",
     {
       id: z.string().describe("Conversation GUID"),
       view: z
@@ -543,7 +577,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "get_conversation_with_contact",
-    "Get the conversation with a specific contact, optionally creating it if none exists yet (get-or-create). This is the usual entry point: guest id → get_contact_by_guest → this call with isCreateNew=true → send. With isCreateNew=false and no thread yet the API answers 404 — that is the documented contract, not a failure, so treat it as 'no conversation' rather than an error.",
+    "Get the conversation with a specific contact, optionally creating it if none exists yet (get-or-create). This is the usual entry point: guest id → get_contact_by_guest → this call with isCreateNew=true → send. With isCreateNew=false and no thread yet the API answers 404 — that is the documented contract, not a failure, so treat it as 'no conversation' rather than an error. Takes no view: callerRole is always ORG_MEMBER, since a key reads as its own organization. Like get_conversation, its lastMessage.attachments is always null whether or not the message has files — use list_messages for those.",
     {
       contactId: z.string().describe("Contact GUID — must be a contact of your organization"),
       isCreateNew: z
@@ -571,7 +605,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "list_messages",
-    "List a conversation's messages, paginated. Branch on isFromOrganization to tell the two sides apart — it is recorded when the message is sent. Do NOT infer the side by comparing senderId against a contactId: senderId holds the contact's id on an SMS reply or a sendFrom='Contact' send, but their user id when they sent from their own app. Render from the sender block. isRead is the organization's receipt: messages from the contact are always true, and one you sent turns true once they read past it — it stays false indefinitely for a contact with no registered account, which is not a delivery failure. Returns { data: [...], pagination: {...} }.",
+    "List a conversation's messages, paginated. Branch on isFromOrganization to tell the two sides apart — it is recorded when the message is sent. Do NOT infer the side by comparing senderId against a contactId: senderId holds the contact's id on an SMS reply or a sendFrom='Contact' send, but their user id when they sent from their own app. Render from the sender block. On the organization side, senderType is 'ApiKey' for a message an API key sent (senderId is then the key's id and senderApiKeyName its name, also copied to sender.firstName) and 'User' for one a person sent; messages sent through the API before keys had their own identity still show the organization owner as a 'User'. isRead is the organization's receipt: messages from the contact are always true, and one you sent turns true once they read past it — it stays false indefinitely for a contact with no registered account, which is not a delivery failure. This is the ONLY read that reports a message's attachments — they come back inline on each message, and the field is null rather than [] when a message has no files, so test its length rather than its presence. Returns { data: [...], pagination: {...} }.",
     {
       conversationId: z.string().describe("Conversation GUID"),
       eventId: z
@@ -597,7 +631,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "send_chat_message",
-    "Send a message into a conversation. sendFrom is required and says which side the message is from — there is no default, and omitting it is rejected. sendFrom='Organization' is the normal case: it delivers on whichever of inApp/inSMS/inEmail you enable. sendFrom='Contact' (with contactId) records a message as coming from the contact, the way an inbound SMS reply is stored — that dispatches nothing to them, since the channel flags describe how to reach the contact, and it raises the organization's unread count instead of clearing it. Set at least one channel on any message meant to reach the person: a send with every channel off is stored and pushed live but dispatches nothing, and it returns the same 200 as one that delivered — the inApp/inSMS/inEmail echoed on lastMessage are the only way to tell the two apart.",
+    "Send a message into a conversation. sendFrom is required and says which side the message is from — there is no default, and omitting it is rejected. sendFrom='Organization' is the normal case: it delivers on whichever of inApp/inSMS/inEmail you enable, is attributed to this API key itself (senderType 'ApiKey', senderId = the key's id, the key's name as the sender), and marks the thread read for this key. sendFrom='Contact' (with contactId) records a message as coming from the contact, the way an inbound SMS reply is stored — that dispatches nothing to them, since the channel flags describe how to reach the contact, and it raises the organization's unread count instead of clearing it. Set at least one channel on any message meant to reach the person: a send with every channel off is stored and pushed live but dispatches nothing, and it returns the same 200 as one that delivered — the inApp/inSMS/inEmail echoed on lastMessage are the only way to tell the two apart. Unlike the conversation reads, the lastMessage returned HERE does carry the attachments that were stored, each under a newly assigned id — the upload's id is not reused.",
     {
       conversationId: z.string().describe("Conversation GUID — must belong to your organization"),
       sendFrom: z
@@ -639,7 +673,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "mark_conversation_read",
-    "Mark a conversation read up to now, clearing its unread count. Always records the ORGANIZATION as the reader — there is no contact-side mark-read on this surface, so do not call it to represent the contact reading. Until API-key management ships a key acts as the organization's owner account, so this also clears the badge that owner sees in the web app: the API and the app share one read state. Idempotent, and the read mark only moves forward. Returns the recorded readDate.",
+    "Mark a conversation read up to now, clearing its unread count. Always records the ORGANIZATION as the reader — there is no contact-side mark-read on this surface, so do not call it to represent the contact reading. The read state is this API key's own — every key has one, separate from every person's — so this does NOT clear any badge in the web app, and a person reading the thread there does not change this key's unreadCount. The contact still gets a 'seen' receipt. Idempotent, and the read mark only moves forward. Returns the recorded readDate.",
     { id: z.string().describe("Conversation GUID") },
     async ({ id }) => ({
       content: [{ type: "text", text: JSON.stringify(await client.markConversationRead(id), null, 2) }],
@@ -657,7 +691,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "upload_message_attachments",
-    "Upload files for use as chat attachments, then pass the returned records to send_chat_message. Files are base64-encoded in the request, so this is practical for small files only — the encoded bytes have to pass through the conversation.",
+    "Upload files for use as chat attachments, then pass the returned records to send_chat_message verbatim. Files are base64-encoded in the request, so this is practical for small files only — the encoded bytes have to pass through the conversation. The id returned here identifies the upload, not the sent attachment: storing the message assigns a fresh id, while url and storageFileName carry through unchanged.",
     {
       files: z
         .array(
@@ -680,6 +714,193 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
     {},
     async () => ({
       content: [{ type: "text", text: JSON.stringify(await client.listGuestGroups(), null, 2) }],
+    })
+  );
+
+  // ── Custom fields ──
+  //
+  // Organization-defined fields per record type. Definitions live here; values
+  // are written on the record — today the guest tools' customFields, keyed by
+  // definition id. DRAFT is the status that matters: shape changes are free
+  // while a field holds it and guarded once it leaves.
+
+  const entityType = z
+    .enum(["GUEST", "CONTACT", "EVENT", "ORGANIZATION", "TECHAEON"])
+    .describe("Record type the field belongs to");
+  const customFieldStatus = z.enum(["DRAFT", "ACTIVE", "DEPRECATED", "ARCHIVED"]);
+  const fieldOptions = z
+    .array(
+      z.object({
+        id: z.string().optional().describe("Existing option id — include it to keep that option through a replace"),
+        optionLabel: z.string(),
+        optionValue: z.string().optional().describe("Generated from optionLabel when omitted"),
+        orderIndex: z.number().optional(),
+      })
+    )
+    .describe("Choices for a SELECT field. Sending this replaces the whole set; [] removes every option.");
+  const rules = z
+    .record(z.string(), z.unknown())
+    .describe("Legal keys depend on dataType — see get_custom_field_schema, e.g. { maxLength: 200 } for TEXT");
+  const hints = z
+    .record(z.string(), z.unknown())
+    .describe("Keys: placeholder, helpLink, showInGrid, gridWidth, rows, currencyCode");
+
+  server.tool(
+    "list_custom_fields",
+    "List your organization's custom field definitions for one record type, ordered by orderIndex. Returns every status unless you pass status. Use the returned ids as the keys of a guest's customFields. validationRules and uiHints come back as JSON strings, not objects.",
+    {
+      entityType,
+      status: customFieldStatus.optional().describe("Return only fields in exactly this status, e.g. ACTIVE"),
+    },
+    async ({ entityType, status }) => ({
+      content: [
+        { type: "text", text: JSON.stringify(await client.listCustomFields(entityType, status), null, 2) },
+      ],
+    })
+  );
+
+  server.tool(
+    "get_custom_field",
+    "Get one custom field definition by ID, in any status, with its options.",
+    { id: z.string().describe("Custom field definition GUID") },
+    async ({ id }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.getCustomField(id), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "get_custom_field_schema",
+    "Get the legal values for defining a custom field: dataTypes (and the subset usable today, phase1SupportedDataTypes), widgetTypes, cardinalities, statuses, uiHint keys, and the legal widgets and validation-rule keys per dataType. Call this before create/update/patch rather than guessing.",
+    {},
+    async () => ({
+      content: [{ type: "text", text: JSON.stringify(await client.getCustomFieldSchema(), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "create_custom_field",
+    "Define a new custom field for a record type. It starts as DRAFT — invisible on every form until set ACTIVE with update_custom_field_status — unless you pass another status, which also switches on breaking-change protection immediately. fieldKey must be unique per organization + entityType + namespace. options is required for SELECT. widgetType and cardinality are derived from dataType when omitted.",
+    {
+      entityType,
+      fieldKey: z.string().describe("Machine key, e.g. dietary_notes. Lowercase, starts with a letter, max 60 chars"),
+      label: z.string().describe("Display name on forms, max 120 chars"),
+      dataType: z
+        .string()
+        .describe("TEXT, LONGTEXT, NUMBER, BOOLEAN, DATE or SELECT are usable today; DECIMAL, DATETIME, EMAIL, PHONE, URL are planned"),
+      scopeEntityType: z
+        .enum(["ORGANIZATION", "EVENT"])
+        .optional()
+        .describe("ORGANIZATION (default) applies across every event; EVENT applies to one, given by scopeId"),
+      scopeId: z.string().optional().describe("Event GUID — required when scopeEntityType is EVENT"),
+      fieldNamespace: z
+        .string()
+        .optional()
+        .describe("Default 'org'. Lowercase; 'system' and 'app:*' are reserved"),
+      helperText: z.string().optional().describe("Help text shown beneath the field"),
+      widgetType: z.string().optional().describe("e.g. TEXT_INPUT, DROPDOWN, CHECKBOX — derived when omitted"),
+      cardinality: z.enum(["SINGLE", "LIST"]).optional(),
+      isMandatory: z.boolean().optional().describe("A value is required to submit the form (default false)"),
+      isPii: z.boolean().optional().describe("Flags the field as personal data (default false)"),
+      status: customFieldStatus.optional().describe("Default DRAFT"),
+      validationRules: rules.optional(),
+      uiHints: hints.optional(),
+      groupKey: z.string().optional().describe("Free-text section heading for grouping fields"),
+      orderIndex: z.number().optional().describe("Sort position, lower first (default 0)"),
+      options: fieldOptions.optional(),
+    },
+    async (params) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.createCustomField(params), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "update_custom_field",
+    "Full update of a custom field's shape — send EVERY field, not only the ones changing: omitted validationRules and uiHints are cleared. Prefer patch_custom_field for small edits. Once the field has left DRAFT, changing dataType or cardinality, turning isMandatory on, or removing an option fails with CUSTOM_FIELD_BREAKING_CHANGE — deprecate it and create a replacement instead.",
+    {
+      id: z.string().describe("Custom field definition GUID"),
+      fieldKey: z.string().describe("Renaming is a safe change"),
+      label: z.string(),
+      dataType: z.string(),
+      helperText: z.string().optional(),
+      widgetType: z.string().optional().describe("Derived from dataType when omitted"),
+      cardinality: z.enum(["SINGLE", "LIST"]).optional(),
+      isMandatory: z.boolean().optional(),
+      isPii: z.boolean().optional(),
+      validationRules: rules.optional(),
+      uiHints: hints.optional(),
+      groupKey: z.string().optional(),
+      orderIndex: z.number().optional(),
+      options: fieldOptions
+        .optional()
+        .describe("Omit to leave options as they are; [] removes all; otherwise a full replace — keep an existing option by including its id"),
+    },
+    async ({ id, ...params }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.updateCustomField(id, params), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "patch_custom_field",
+    "Partially update a custom field — only the fields you pass change. null clears helperText, groupKey, validationRules or uiHints; null on widgetType or cardinality re-derives it from dataType. validationRules and uiHints are each replaced whole when sent. The same post-DRAFT breaking-change rules as update_custom_field apply.",
+    {
+      id: z.string().describe("Custom field definition GUID"),
+      fieldKey: z.string().optional(),
+      label: z.string().optional(),
+      helperText: z.string().nullable().optional(),
+      dataType: z.string().optional(),
+      widgetType: z.string().nullable().optional(),
+      cardinality: z.enum(["SINGLE", "LIST"]).nullable().optional(),
+      isMandatory: z.boolean().optional(),
+      isPii: z.boolean().optional(),
+      validationRules: rules.nullable().optional(),
+      uiHints: hints.nullable().optional(),
+      groupKey: z.string().nullable().optional(),
+      orderIndex: z.number().optional(),
+      options: fieldOptions
+        .optional()
+        .describe("Omit to leave options as they are; [] removes all; otherwise a full replace — keep an existing option by including its id"),
+    },
+    async ({ id, ...params }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.patchCustomField(id, params), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "update_custom_field_status",
+    "Set a custom field's status. Any status can move to any other. ACTIVE makes it appear on forms (and, if mandatory, required on guest create); DEPRECATED or ARCHIVED retires it while keeping existing answers visible. Leaving DRAFT switches on breaking-change protection for update/patch.",
+    {
+      id: z.string().describe("Custom field definition GUID"),
+      status: customFieldStatus,
+    },
+    async ({ id, status }) => ({
+      content: [
+        { type: "text", text: JSON.stringify(await client.changeCustomFieldStatus(id, status), null, 2) },
+      ],
+    })
+  );
+
+  server.tool(
+    "reorder_custom_fields",
+    "Set the sort position of several custom fields of one record type in one call. Fields not listed keep their position; ids that are not your organization's fields of this entityType are skipped silently rather than rejected. Returns true.",
+    {
+      entityType,
+      ordering: z
+        .array(z.object({ id: z.string(), orderIndex: z.number() }))
+        .describe("One entry per field being repositioned"),
+    },
+    async ({ entityType, ordering }) => ({
+      content: [
+        { type: "text", text: JSON.stringify(await client.reorderCustomFields(entityType, ordering), null, 2) },
+      ],
+    })
+  );
+
+  server.tool(
+    "delete_custom_field",
+    "Soft-delete a custom field definition. Only works while the field is DRAFT — past that it may already hold answers, so the API refuses with CUSTOM_FIELD_BREAKING_CHANGE. Retire a live field with update_custom_field_status (DEPRECATED or ARCHIVED) instead.",
+    { id: z.string().describe("Custom field definition GUID") },
+    async ({ id }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.deleteCustomField(id), null, 2) }],
     })
   );
 

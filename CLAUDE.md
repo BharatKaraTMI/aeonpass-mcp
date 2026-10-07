@@ -1,7 +1,7 @@
 # CLAUDE.md — aeonpass-mcp
 
 ## What this is
-MCP server for the Aeon Pass platform API. Exposes Techaeon and Group CRUD operations as MCP tools so Claude Code can query and manage techaeons directly.
+MCP server for the Aeon Pass platform API. Exposes techaeons, events and guests, contacts, chat, and custom field definitions as MCP tools so Claude Code can query and manage them directly.
 
 Deployed at **https://mcp.aeonpass.com/mcp** (Vercel, fronted by Cloudflare DNS
 in DNS-only mode — the proxy would buffer this transport's SSE stream). Callers
@@ -20,7 +20,7 @@ parameter, not a module-level env read, so each transport decides where it
 comes from.
 
 ```
-src/api.ts     createClient(apiKey) → all 34 API calls bound to that key
+src/api.ts     createClient(apiKey) → all 44 API calls bound to that key
 src/realtime.ts SignalR chat subscriptions, keyed by sha256(apiKey) + scope
 src/server.ts  createServer(client, opts) → registers the tools
 src/app.ts     Hono app; reads X-API-KEY per request
@@ -45,7 +45,7 @@ report a dead connection.
 
 ## Logging
 
-`createClient` wraps all 34 methods and emits one JSON line per call to
+`createClient` wraps all 44 methods and emits one JSON line per call to
 **stderr** — stdout belongs to the stdio transport's JSON-RPC frames, so writing
 there corrupts the protocol.
 
@@ -62,14 +62,16 @@ bodies, and API error text (which can echo request content back). Only the
 status code is kept on failure.
 
 `callMeta` in `api.ts` records argument *shape* for calls where it matters after
-the fact — bulk sends, deletes, and chat sends. It logs counts and IDs, never
+the fact — bulk sends, deletes, chat sends, and custom field status and shape
+changes. It logs counts, IDs and field names, never
 message bodies, attachments, recipients, or contact records.
 
 Every contact and guest-group endpoint resolves `organizationId` server-side
 from the API key — it is never a request parameter, so a key can only ever
 reach its own org's data. `create_contact`, `update_contact`, `list_contacts`,
 `send_message_to_contacts`, `upload_contacts`, and `list_guest_groups` take no
-`organizationId` argument. The chat tools are scoped the same way.
+`organizationId` argument. The chat and custom field tools are scoped the same
+way.
 
 
 `realtime.ts` logs the same way, but connection lifecycle only —
@@ -106,6 +108,7 @@ All tools call the Aeon Pass gateway at `https://apv2-gatewayapp-prod-westus3.az
 |------|-------------|
 | `get_event` | Get event details by ID |
 | `list_guests` | List/search guests for an event (paginated) |
+| `get_guest` | Get one guest, including custom field values |
 | `create_guest` | Add a guest to an event, optionally issue invitation |
 | `update_guest` | Full update of guest details or invitation |
 | `patch_guest` | Partial update — only the fields you pass are changed |
@@ -113,6 +116,40 @@ All tools call the Aeon Pass gateway at `https://apv2-gatewayapp-prod-westus3.az
 | `send_invite` | Send/resend invitations to guests (sets status to SENT) |
 | `send_message_to_guests` | Message guests via InApp/SMS/Email |
 | `list_guest_groups` | List valid guest group IDs for an organization |
+
+**Custom fields**
+| Tool | Description |
+|------|-------------|
+| `list_custom_fields` | List definitions for a record type (optional status filter) |
+| `get_custom_field` | Get one definition with its options |
+| `get_custom_field_schema` | Legal dataType / widgetType / rule-key matrix |
+| `create_custom_field` | Define a field (starts `DRAFT`) |
+| `update_custom_field` | Full replace of a field's shape |
+| `patch_custom_field` | Partial update — only the fields you pass |
+| `update_custom_field_status` | `DRAFT` / `ACTIVE` / `DEPRECATED` / `ARCHIVED` |
+| `reorder_custom_fields` | Bulk-set `orderIndex` for one record type |
+| `delete_custom_field` | Soft-delete — `DRAFT` fields only |
+
+Custom fields come from the **Global** API (`specs/global.json`), live on every
+environment. Definitions live there; *values* are written on the record itself —
+today only guests, as `customFields` on `create_guest` / `update_guest` /
+`patch_guest`, read back by `get_guest` (`list_guests` does not carry them).
+Three things that are easy to get wrong:
+
+- `customFields` is keyed by the definition's **`id`**, not its `fieldKey`.
+- It is **merged by key on both PUT and PATCH**, even though PUT replaces the rest
+  of the guest. Omitting it leaves every value alone; on PATCH an explicit
+  `null` value clears that one field. On create, every `ACTIVE` mandatory field
+  must be present.
+- `DRAFT` is the status that matters. While a field holds it any shape change
+  goes; once it leaves, changing `dataType`/`cardinality`, turning
+  `isMandatory` on, or dropping an option is `CUSTOM_FIELD_BREAKING_CHANGE`, and
+  delete is refused outright. Retire a live field by status instead.
+
+`validationRules` and `uiHints` are objects on the way in but come back as JSON
+**strings** on `CustomFieldDefinitionDto`. `patch_custom_field` sends plain
+values like `patch_guest` does — the spec's `PatchFieldOf…` / `{ isSet, value }`
+types are the C# wrapper leaking into the schema.
 
 **Contacts**
 | Tool | Description |
@@ -123,7 +160,12 @@ All tools call the Aeon Pass gateway at `https://apv2-gatewayapp-prod-westus3.az
 | `update_contact` | Update contact details |
 | `delete_contact` | Soft-delete a contact |
 | `send_message_to_contacts` | Message contacts via InApp/SMS/Email |
-| `upload_contacts` | Bulk upsert contacts from a list |
+| `upload_contacts` | Bulk upsert contacts from a list — all-or-nothing |
+
+`upload_contacts` became **atomic** in Oct 2026 (dev and stage; not prod yet): if any row fails
+validation, no contacts are saved, and the failures come back in `errorItems`
+with per-field `errors`. Rows also gained `displayName`, `address`, `city`, `zip`
+and `socialHandle`; on a match, blank optional fields keep the current value.
 
 **Chat (Message API)**
 | Tool | Description |
@@ -160,6 +202,28 @@ delivered send apart from the `inApp`/`inSMS`/`inEmail` echoed on `lastMessage`.
 That is documented rather than guarded, so the tool description carries the
 warning — set a channel on anything meant to reach the person.
 
+### API keys have their own identity
+
+Dev only as of Oct 2026 (see the rollout table below). A key used to act as its organization's **owner
+account**; it is now a principal of its own, which changes two things:
+
+- **Attribution.** A `sendFrom: "Organization"` send is recorded as sent *by the
+  key*: `senderType: "ApiKey"`, `senderId` = the key's id, `senderApiKeyId`, and
+  the key's name in `senderApiKeyName` (copied to `sender.firstName` so older
+  clients render it — `"Legacy API key"` for a pre-management key, `"API key"`
+  when unresolvable). A person on either side is `senderType: "User"`. Messages
+  sent through the API *before* this are still attributed to the owner as
+  `User` — history is not rewritten, so `senderType` cannot tell old API sends
+  from the owner's own.
+- **Read state is per key.** `mark_conversation_read`, and the implicit mark on
+  an org-side send, move only *this key's* read mark. They no longer clear the
+  owner's badge in the web app, and a person reading there no longer moves the
+  key's `unreadCount`. Two keys of one org see two different unread counts. The
+  contact's "seen" receipt is still sent.
+
+`isFromOrganization` remains the way to tell the sides apart; `senderType` only
+says *who* on the organization side sent it.
+
 The three conversation *reads* — `list_conversations`, `get_conversation`,
 `list_messages` — take a `view` query parameter (`ConversationSide`: `Auto` |
 `Organization` | `Contact`). **It sets `callerRole` and nothing else.**
@@ -190,6 +254,36 @@ stays byte-identical to the pre-`view` request.
 
 `view` also accepts the short spelling `org`, and its query-string converter
 never fails, so a bad value silently becomes `Auto`. We send the canonical name.
+
+### Attachments, and which read reports them
+
+`MessageDto.attachments` is **`null`, not `[]`**, on a message with no files —
+it became nullable on stage in Sept 2026. Test its length, never its presence.
+
+Worse, `null` does not mean the same thing on every endpoint, because the
+single-conversation reads drop the field rather than filling it. Verified on
+stage against one message whose send response returned an attachment:
+
+| Read | `lastMessage.attachments` / `attachments` |
+|---|---|
+| `list_messages` | the real attachments — **the authoritative read** |
+| `list_conversations` | populated, so `null` here really is "no files" |
+| `get_conversation` | **always `null`**, files or not |
+| `get_conversation_with_contact` | **always `null`** — same projection |
+| `send_chat_message` (response) | populated: the attachments just stored |
+
+So a `null` from `get_conversation` is "this projection does not carry them",
+and reading it as "no attachment" is the trap. The spec documents this only on
+`get_conversation`; that `list_conversations` differs from the other two reads
+is ours, found by testing. The tool descriptions carry the distinction, since
+that is where a model reads it.
+
+On send, each attachment is **assigned a fresh id** at store time — the upload's
+id is not reused, while `url` and `storageFileName` carry through unchanged. So
+do not use an upload id to correlate a sent attachment; match on `url`.
+
+`messageBody` and `attachments` are each optional on their own: an
+attachment-only send is valid and stores `messageBody: null`.
 
 **Chat realtime (SignalR)** — stdio and `npm run serve` only, see above
 | Tool | Description |
@@ -259,7 +353,7 @@ Requires `AEONPASS_API_KEY` env var.
 The specs pin `info.version` at `1.0.0` and don't move it — not for the path
 restructure, not for the list-response reshape, not for `PATCH /guest/{id}`.
 Version is useless for change detection, so `specs/*.json` holds a committed
-snapshot of all four specs (techaeon, event, organization, message) and
+snapshot of all five specs (techaeon, event, organization, message, global) and
 `npm run check:api` diffs the live specs against it, also flagging operations
 with no client method and client methods with no operation. A weekly
 GitHub Action runs it.
@@ -272,23 +366,49 @@ not to a `createClient` method.
 specs from `aeonpass-dev-portal.vercel.app/api/specs/{name}`; each gateway
 environment also serves the spec its own build generated, e.g.
 `…-stage-….azurewebsites.net/swagger/docs/v1/messageAPI` (the swagger UI's
-config block lists all six). The gateway spec is what the deployed code
+config block lists all six: `techaeonAPI`, `eventAPI`, `organizationAPI`,
+`messageAPI`, `globalAPI`, and `VenueAPI`, which has no `/api/portal` routes and
+so no snapshot). The gateway spec is what the deployed code
 actually does, and it moves first — the `sendFrom` requirement above was live on
 stage while the published spec still described the old optional field. So the
 drift check passing does not mean there is nothing to pick up; check the
 environment's own swagger when chasing a specific change.
 
-> **`specs/message.json` is currently a gateway snapshot, not a published one.**
-> It was regenerated from the stage swagger — filtered to `/api/portal` and the
-> schemas those paths reach, which is the same shape the publisher serves — so
-> that the committed contract matches the code, which implements `sendFrom`
-> required, `view`, `contactId` and `EVENT_NOT_LINKED`. The published spec has
-> none of those yet, so `check:api` reports
-> `~ message: same operations, but the spec body changed` until it catches up. **Do not clear that line with `check:api -- --write`** —
-> it fetches the published source and would revert the snapshot to the old
-> contract. Once the publisher catches up, `--write` is safe again and the line
-> goes away on its own. The other three snapshots do come from the published
-> source; refresh those with `--write` as usual.
+> **`specs/message.json` and `specs/organization.json` are gateway snapshots,
+> not published ones.** Both were regenerated from the **dev** swagger in Oct
+> 2026 — filtered to `/api/portal` and the schemas those paths reach, which is
+> the same shape the publisher serves, with `servers[0].url` rewritten to prod
+> and `example` blocks stripped the way `check:api` stores every other snapshot.
+>
+> The publisher has caught up on everything from Sept (`sendFrom` required,
+> `view`, `contactId`, `EVENT_NOT_LINKED`, nullable `attachments`). What it
+> still lags, as of Oct 2026:
+>
+> - **message** — `MessageDto.senderType` / `senderApiKeyId` /
+>   `senderApiKeyName`, and the per-key read state in the `mark-read` and
+>   `send-message` descriptions.
+> - **organization** — the five new `upload-list` row fields and its
+>   all-or-nothing behavior.
+>
+> Those are why `check:api` reports `~ message:` and `~ organization: same
+> operations, but the spec body changed`. **Do not clear those lines with
+> `check:api -- --write`** — `--write` rewrites *every* snapshot from the
+> published source, so it would revert both to the older contract. To refresh
+> techaeon, event or global, run `--write` and then `git checkout` the two
+> gateway snapshots back. Once the publisher catches up, `--write` is safe again
+> and the lines go away on their own.
+>
+> `src/api.ts` `BASE_URL` points at the **dev** gateway on this branch. Rollout
+> as of 7 Oct 2026, from each gateway's own swagger:
+>
+> | Change | dev | stage | prod |
+> |---|---|---|---|
+> | Custom fields API, `GET /guest/{id}`, guest `customFields` | ✓ | ✓ | ✓ |
+> | `upload-list` new row fields + all-or-nothing | ✓ | ✓ | — |
+> | API-key identity (`senderType`, per-key read state) | ✓ | — | — |
+>
+> Pointed at prod, the new upload fields would be ignored and the chat tool
+> descriptions would overstate what prod does. Re-check before switching.
 
 Adding an endpoint: implement in `createClient` (`api.ts`) → register the tool
 (`server.ts`) → add the operation to `COVERED` in `scripts/check-api.mjs`.

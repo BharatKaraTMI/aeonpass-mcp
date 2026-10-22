@@ -138,6 +138,12 @@ Two things cost real debugging time; both are load-bearing:
 | Tool | Description |
 |------|-------------|
 | `get_event` | Get event details by ID |
+| `create_event` | Create an event (draft until published) |
+| `update_event` | Full update — omitted non-text fields are cleared |
+| `patch_event` | Partial update — only the fields you pass are changed |
+| `update_event_details` | Replace the event's HTML details |
+| `update_event_invitee` | Set event type and guest limits |
+| `publish_event` | Publish a draft event |
 | `list_guests` | List, search, and filter guests for an event (paginated) |
 | `get_guest` | Get one guest, including custom field values |
 | `create_guest` | Add a guest to an event, optionally issuing an invitation |
@@ -147,6 +153,23 @@ Two things cost real debugging time; both are load-bearing:
 | `send_invite` | Send or resend invitations (sets status to SENT) |
 | `send_message_to_guests` | Message guests via InApp / SMS / Email |
 | `list_guest_groups` | List valid guest group IDs for an organization |
+
+### Events & invitations by person
+
+Org-wide event lists, and lookups of everything one person is invited to. A
+guest or contact is matched to guest records across all the organization's
+events by phone or email, so these see past the single event a guest ID
+belongs to. All paginated, with the same event filters (`status`, `searchTerm`,
+`venueId`, `startDate`).
+
+| Tool | Description |
+|------|-------------|
+| `list_events` | List the organization's events |
+| `list_contact_events` | Events a contact is a guest of |
+| `list_guest_events` | Events the person behind a guest is invited to |
+| `list_contact_guests` | A contact's guest records, each with its invitations and event |
+| `list_contact_invitations` | A contact's invitations, each with guest and event |
+| `list_guest_invitations` | Invitations held by the person behind a guest |
 
 ### Contacts
 
@@ -182,7 +205,8 @@ Organization-defined fields per record type (`GUEST`, `CONTACT`, `EVENT`,
 
 Guest values are written through `create_guest`, `update_guest` and
 `patch_guest` as `customFields`, keyed by the definition's **id** (not its
-`fieldKey`), and read back with `get_guest`. They are merged by key on update
+`fieldKey`), and read back with `get_guest`. Contact values work the same way
+through `create_contact` / `update_contact`, read back with `get_contact`. They are merged by key on update
 as well as patch, so omitting `customFields` never clears anything. Once a field
 leaves `DRAFT`, edits that could invalidate existing answers are refused and it
 can no longer be deleted — retire it by status instead.
@@ -382,7 +406,7 @@ key is a parameter rather than a module-level env read, so each entrypoint
 decides where it comes from:
 
 ```
-src/api.ts     createClient(apiKey) → the 44 API calls, bound to that key
+src/api.ts     createClient(apiKey) → the 56 API calls, bound to that key
 src/realtime.ts SignalR chat subscriptions, keyed by sha256(apiKey) + scope
 src/server.ts  createServer(client) → registers the tools
 src/app.ts     Hono app; reads X-API-KEY per request

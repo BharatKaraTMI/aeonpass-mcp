@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { AeonPassClient } from "./api.js";
+import { type AeonPassClient, EVENT_TYPES } from "./api.js";
 import {
   connectRealtime,
   disconnectRealtime,
@@ -203,6 +203,222 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
     })
   );
 
+  // ── Event writes ──
+
+  const eventTypeId = z
+    .string()
+    .describe(`Event type: ${EVENT_TYPES.INVITEONLY} (Invite only) or ${EVENT_TYPES.OPENINVITE} (Open invite)`);
+  const localDate = (what: string) =>
+    z.string().describe(`${what}, as LOCAL time in eventTimeZone (e.g. 2026-11-05T19:00:00), not UTC`);
+  const eventFields = {
+    description: z.string().describe("Event description"),
+    endDate: localDate("When the event ends"),
+    doorOpenDate: localDate("When doors open"),
+    eventTimeZone: z.string().describe("IANA time zone the dates are in, e.g. America/Los_Angeles"),
+    parentEventId: z.string().describe("Make this a sub-event of another event of your organization (sub-events never appear in list_events)"),
+    maximumGuests: z.number().describe("Guest capacity; omit/null for no limit"),
+    additionalGuestLimit: z.number().describe("Extra guests each guest may bring; omit/null for no limit"),
+    phoneToCall: z.string(),
+    phoneToText: z.string(),
+    contactEmail: z.string(),
+    hostName: z.string().describe("Host name shown to guests"),
+    details: z.string().describe("Rich-text (HTML) details for the event page"),
+    marketingPageLink: z.string(),
+    isRegQuestionEnable: z.boolean().describe("Registration widget asks the event's registration questions"),
+    isVenueHidden: z.boolean().describe("Hide the venue from guests"),
+    ticketCurrency: z.string().describe("ISO currency code, default USD"),
+    widgetRedirectUrl: z.string().describe("Where the registration widget sends guests after registering"),
+  };
+  const optional = <T extends Record<string, z.ZodTypeAny>>(o: T) =>
+    Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v.optional()])) as { [K in keyof T]: z.ZodOptional<T[K]> };
+  const writeRules =
+    " Validated before anything is written: an unknown typeId is 404; a negative maximumGuests or additionalGuestLimit, endDate before startDate, a parentEventId that is the event itself or one of its sub-events, or any property the API does not define is 400. eventTimeZone is NOT validated — pass a real IANA name, since isRunning and the UPCOMING/HISTORY buckets are computed in it.";
+  const notify = z
+    .boolean()
+    .optional()
+    .describe("true sends EVERY guest of the event an update notification. Leave unset unless the guests should hear about this change.");
+
+  server.tool(
+    "create_event",
+    "Create an event in your organization. It is created as a DRAFT (statusName 'Draft') and stays out of list_events status=UPCOMING/HISTORY until published with publish_event. Returns the created event; save its id. typeId defaults to Invite only. The event has no invitation design, which create_guest handles by issuing invitations without one." + writeRules,
+    {
+      title: z.string().describe("Required, up to 200 characters"),
+      startDate: localDate("Required. When the event starts"),
+      typeId: eventTypeId.optional(),
+      ...optional(eventFields),
+    },
+    async (params) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.createEvent(params), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "update_event",
+    "Full update of an event. CAREFUL: text fields left out keep their value, but every other field left out — endDate, doorOpenDate, maximumGuests, additionalGuestLimit, parentEventId, isRegQuestionEnable, isVenueHidden — is CLEARED, and ticketCurrency resets to USD. Send the current values from get_event for anything you are not changing, or use patch_event instead. Does not change publish status." + writeRules,
+    {
+      id: z.string().describe("Event GUID"),
+      title: z.string().describe("Required, up to 200 characters"),
+      startDate: localDate("Required. When the event starts"),
+      typeId: eventTypeId.describe("Required. " + eventTypeId.description),
+      ...optional(eventFields),
+      notify,
+    },
+    async ({ id, ...params }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.updateEvent(id, params), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "patch_event",
+    "Partially update an event — only the fields you pass change. Prefer this over update_event. null clears description, endDate, doorOpenDate, maximumGuests, additionalGuestLimit, parentEventId, hostName and the other text fields; title, startDate, typeId, ticketCurrency, isRegQuestionEnable and isVenueHidden cannot be null. Send at least one field. Does not publish — use publish_event. Returns the whole event after the update. endDate vs startDate is checked against the event as it will be stored, so sending only one is compared with the other's current value." + writeRules,
+    {
+      id: z.string().describe("Event GUID"),
+      title: z.string().optional(),
+      startDate: localDate("When the event starts").optional(),
+      typeId: eventTypeId.optional(),
+      ...Object.fromEntries(Object.entries(eventFields).map(([k, v]) => [k, v.nullable().optional()])),
+      notify,
+    },
+    async ({ id, ...params }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.patchEvent(id, params as never), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "update_event_details",
+    "Replace only an event's rich-text (HTML) details; nothing else changes. null clears them. The HTML is stored exactly as sent — it is not sanitized. Returns { id, details }.",
+    {
+      id: z.string().describe("Event GUID"),
+      details: z.string().nullable().describe("New HTML details, or null to clear"),
+      notify,
+    },
+    async ({ id, ...params }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.updateEventDetails(id, params), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "update_event_invitee",
+    "Set an event's type and guest limits only. Both limits are written as sent — one left out is CLEARED to no limit, not kept — so pass the current value of any limit you are not changing. An unknown typeId is 404 and a negative limit 400; nothing is written when either fails.",
+    {
+      id: z.string().describe("Event GUID"),
+      typeId: eventTypeId,
+      maximumGuests: z.number().nullable().optional().describe("Guest capacity; omit or null for no limit"),
+      additionalGuestLimit: z.number().nullable().optional().describe("Extra guests per guest; omit or null for no limit"),
+    },
+    async ({ id, ...params }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.updateEventInvitee(id, params), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "publish_event",
+    "Publish an event (status Draft → Published), which moves it from list_events status=DRAFT into UPCOMING or HISTORY by its dates. For a ticketed event this also pushes its ticket groups and tiers to the ticketing store. Returns true. There is no unpublish.",
+    { id: z.string().describe("Event GUID") },
+    async ({ id }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.publishEvent(id), null, 2) }],
+    })
+  );
+
+  // The event filters every /event/list* and /invitation/list* read accepts.
+  const eventFilters = {
+    pageNo: z.number().optional().describe("Page number (1-based, default 1)"),
+    pageSize: z.number().optional().describe("Results per page, 1–100 (default 100). Above 100 is rejected, not clamped."),
+    status: z
+      .enum(["UPCOMING", "HISTORY", "DRAFT"])
+      .optional()
+      .describe(
+        "UPCOMING: published and not ended (or ended under a day ago). HISTORY: published and ended over a day ago — ordered newest first. DRAFT: not yet published. Omit for every state, drafts included."
+      ),
+    searchTerm: z
+      .string()
+      .optional()
+      .describe("Partial match on event title, venue name, start date as 'DD Mon YYYY', or confirmed-guest count. Orders by relevance instead of start date."),
+    venueId: z.string().optional().describe("Only events at this venue"),
+    startDate: z
+      .string()
+      .optional()
+      .describe("Only events starting within 24 hours of this value, in the event's local time — pass a date like 2026-11-05 for that day"),
+  };
+  const samePerson =
+    "The guest or contact is matched to guest records across ALL of the organization's events by phone (exact) or email (case-insensitive), so one person invited to three events has three guest records. A guest or contact of another organization is a 404, the same as one that does not exist.";
+
+  server.tool(
+    "list_events",
+    "List your organization's events (resolved from the API key), ordered by start date. Returns active, top-level events — drafts included unless status filters them out; sub-events and deleted events never appear. Dates are local times in each event's eventTimeZone. Each item carries title, dates, statusCode (DRAFT/PUBLISHED), isRunning, totalComing, totalAdmitted, venue and design fields; use get_event for full details. Returns { data: [...], pagination: { totalCount, page, pageSize, totalPages } }.",
+    eventFilters,
+    async (params) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.listEvents(params), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "list_contact_events",
+    `List your organization's events a contact is a guest of. Each item is the same event object list_events returns. ${samePerson}`,
+    { contactId: z.string().describe("Contact GUID"), ...eventFilters },
+    async ({ contactId, ...params }) => ({
+      content: [
+        { type: "text", text: JSON.stringify(await client.listEventsByContact(contactId, params), null, 2) },
+      ],
+    })
+  );
+
+  server.tool(
+    "list_guest_events",
+    `List your organization's events the person behind a guest is invited to — not just the guest's own event. Each item is the same event object list_events returns. ${samePerson}`,
+    { guestId: z.string().describe("Guest GUID"), ...eventFilters },
+    async ({ guestId, ...params }) => ({
+      content: [
+        { type: "text", text: JSON.stringify(await client.listEventsByGuest(guestId, params), null, 2) },
+      ],
+    })
+  );
+
+  server.tool(
+    "list_contact_guests",
+    `List a contact's guest records across your organization's events — one row per guest per event, each with guestId, the guest's details, its invitations (newest first) and the event. A guest added without an invitation is included with an empty invitations array. Pages count guest records, not invitations. ${samePerson}`,
+    {
+      contactId: z.string().describe("Contact GUID"),
+      eventId: z.string().optional().describe("Only the guest record on this event"),
+      ...eventFilters,
+    },
+    async ({ contactId, ...params }) => ({
+      content: [
+        { type: "text", text: JSON.stringify(await client.listGuestRecordsByContact(contactId, params), null, 2) },
+      ],
+    })
+  );
+
+  const invitationFilters = {
+    invitationStatus: z
+      .enum(["CREATED", "SENT", "VIEWED", "ACCEPTED", "DECLINED", "VOIDED", "EXPIRED", "ADMITTED", "CANCELLED", "PURCHASED"])
+      .optional()
+      .describe("Only invitations in this status"),
+    eventId: z.string().optional().describe("Only invitations to this event"),
+  };
+
+  server.tool(
+    "list_contact_invitations",
+    `List a contact's invitations to your organization's events, each with status, isAccepted, guestPasses/isUnlimited, the guest it was sent to and the event. Ordered by event start date, then newest invitation first. ${samePerson}`,
+    { contactId: z.string().describe("Contact GUID"), ...invitationFilters, ...eventFilters },
+    async ({ contactId, ...params }) => ({
+      content: [
+        { type: "text", text: JSON.stringify(await client.listInvitationsByContact(contactId, params), null, 2) },
+      ],
+    })
+  );
+
+  server.tool(
+    "list_guest_invitations",
+    `List every invitation the person behind a guest holds across your organization's events — not just this guest's own — each with status, the guest it was sent to and the event. ${samePerson}`,
+    { guestId: z.string().describe("Guest GUID"), ...invitationFilters, ...eventFilters },
+    async ({ guestId, ...params }) => ({
+      content: [
+        { type: "text", text: JSON.stringify(await client.listInvitationsByGuest(guestId, params), null, 2) },
+      ],
+    })
+  );
+
   // ── Guest Tools ──
 
   server.tool(
@@ -240,7 +456,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "create_guest",
-    "Create a new guest for an event and optionally issue an invitation. groupId is required — use list_guest_groups to find valid IDs. customFields is keyed by custom field DEFINITION ID (from list_custom_fields with entityType GUEST), not by fieldKey; every ACTIVE mandatory guest field must be included, or omit customFields entirely to set none.",
+    "Create a new guest for an event and optionally issue an invitation (status CREATED — nothing is sent until send_invite). Pass invite=true, or any invitation* field, to issue one; the design defaults to the event's own, and an event made with create_event has none, which is fine. groupId is required — use list_guest_groups to find valid IDs. customFields is keyed by custom field DEFINITION ID (from list_custom_fields with entityType GUEST), not by fieldKey; every ACTIVE mandatory guest field must be included, or omit customFields entirely to set none.",
     {
       eventId: z.string().describe("Event GUID"),
       firstName: z.string().describe("Guest first name (required)"),
@@ -252,7 +468,8 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
       isUpdateAllEvent: z.boolean().optional().describe("Apply contact changes to all events for this guest"),
       techaeonCode: z.string().optional().describe("Link a techaeon by its short code"),
       guestCode: z.string().optional().describe("Custom unique code for this guest"),
-      invitationDesignMappingId: z.string().optional().describe("Create an invitation using this design GUID"),
+      invite: z.boolean().optional().describe("Issue an invitation with the event's default design"),
+      invitationDesignMappingId: z.string().optional().describe("Issue an invitation using this design GUID instead of the event's default"),
       invitationGuestPasses: z.number().optional().describe("Number of passes on the invitation"),
       invitationIsUnlimited: z.boolean().optional().describe("Unlimited passes on the invitation"),
       customFields: z
@@ -260,8 +477,10 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
         .optional()
         .describe('Custom field values keyed by definition id, e.g. { "<definitionId>": "Vegan" }'),
     },
-    async ({ eventId, invitationDesignMappingId, invitationGuestPasses, invitationIsUnlimited, ...params }) => {
-      const invitation = invitationDesignMappingId
+    async ({ eventId, invite, invitationDesignMappingId, invitationGuestPasses, invitationIsUnlimited, ...params }) => {
+      const wantsInvitation =
+        invite || [invitationDesignMappingId, invitationGuestPasses, invitationIsUnlimited].some((v) => v !== undefined);
+      const invitation = wantsInvitation
         ? { designMappingId: invitationDesignMappingId, guestPasses: invitationGuestPasses, isUnlimited: invitationIsUnlimited }
         : undefined;
       return {
@@ -409,7 +628,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "list_contacts",
-    "List contacts for your organization (resolved from the API key) with pagination and search. Returns { data: [...], pagination }.",
+    "List contacts for your organization (resolved from the API key) with pagination and search. Returns { data: [...], pagination }. customFields is always null here — read a contact's custom field values with get_contact.",
     {
       pageNo: z.number().optional(),
       pageSize: z.number().optional(),
@@ -425,7 +644,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "get_contact",
-    "Get full details of a single contact by ID",
+    "Get full details of a single contact by ID, including custom field values resolved as { id, fieldKey, label, dataType, value }, where id is the field definition id (the key you write it under). customFields is null when none are set.",
     { id: z.string().describe("Contact GUID") },
     async ({ id }) => ({
       content: [{ type: "text", text: JSON.stringify(await client.getContact(id), null, 2) }],
@@ -434,7 +653,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "create_contact",
-    "Create a new contact for your organization (resolved from the API key). firstName is required. At least one of phone or email should be provided.",
+    "Create a new contact for your organization (resolved from the API key). firstName is required. At least one of phone or email should be provided. customFields is keyed by custom field DEFINITION ID (from list_custom_fields with entityType CONTACT), not by fieldKey.",
     {
       firstName: z.string().describe("Required"),
       lastName: z.string().optional(),
@@ -447,6 +666,10 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
       country: z.string().optional(),
       zip: z.string().optional(),
       socialHandle: z.string().optional(),
+      customFields: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe('Custom field values keyed by definition id, e.g. { "<definitionId>": "Gold" }'),
     },
     async (params) => ({
       content: [{ type: "text", text: JSON.stringify(await client.createContact(params), null, 2) }],
@@ -455,7 +678,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "update_contact",
-    "Update an existing contact's details. firstName is required.",
+    "Update an existing contact's details. firstName is required. customFields is merged by definition id — only the keys you send are written, and omitting it leaves every existing value untouched.",
     {
       id: z.string().describe("Contact GUID"),
       firstName: z.string().describe("Required"),
@@ -470,6 +693,10 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
       country: z.string().optional(),
       zip: z.string().optional(),
       socialHandle: z.string().optional(),
+      customFields: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe("Custom field values keyed by definition id. Merged: keys not sent are left as they are; null clears that one field."),
     },
     async ({ id, ...params }) => ({
       content: [{ type: "text", text: JSON.stringify(await client.updateContact(id, params), null, 2) }],
@@ -500,7 +727,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "upload_contacts",
-    "Bulk create or update contacts from a list. Matches existing contacts by phone/email and upserts; on a match, blank optional fields keep the contact's current value. ALL-OR-NOTHING: if any row fails validation, no contacts are saved, and the failing rows come back in errorItems with per-field errors — fix those and resend the whole list. Each row needs firstName and a phone or email. Returns counts of new/updated/error records.",
+    "Bulk create or update contacts from a list. Matches existing contacts by phone/email and upserts; on a match, blank optional fields keep the contact's current value. Custom field values cannot be set here — use create_contact / update_contact. ALL-OR-NOTHING: if any row fails validation, no contacts are saved, and the failing rows come back in errorItems with per-field errors — fix those and resend the whole list. Each row needs firstName and a phone or email. Returns counts of new/updated/error records.",
     {
       contacts: z.array(
         z.object({
@@ -720,8 +947,8 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
   // ── Custom fields ──
   //
   // Organization-defined fields per record type. Definitions live here; values
-  // are written on the record — today the guest tools' customFields, keyed by
-  // definition id. DRAFT is the status that matters: shape changes are free
+  // are written on the record — today the guest and contact tools'
+  // customFields, keyed by definition id. DRAFT is the status that matters: shape changes are free
   // while a field holds it and guarded once it leaves.
 
   const entityType = z
@@ -747,7 +974,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "list_custom_fields",
-    "List your organization's custom field definitions for one record type, ordered by orderIndex. Returns every status unless you pass status. Use the returned ids as the keys of a guest's customFields. validationRules and uiHints come back as JSON strings, not objects.",
+    "List your organization's custom field definitions for one record type, ordered by orderIndex. Returns every status unless you pass status. Use the returned ids as the keys of a guest's or contact's customFields. validationRules and uiHints come back as JSON strings, not objects.",
     {
       entityType,
       status: customFieldStatus.optional().describe("Return only fields in exactly this status, e.g. ACTIVE"),

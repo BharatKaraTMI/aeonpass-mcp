@@ -35,6 +35,12 @@ const COVERED = {
   "GET /api/portal/techaeon/list": "listTechaeons",
 
   "GET /api/portal/event/{id}": "getEvent",
+  "POST /api/portal/event": "createEvent",
+  "PUT /api/portal/event/{id}": "updateEvent",
+  "PATCH /api/portal/event/{id}": "patchEvent",
+  "POST /api/portal/event/{id}/details": "updateEventDetails",
+  "POST /api/portal/event/{id}/invitee": "updateEventInvitee",
+  "POST /api/portal/event/{id}/publish": "publishEvent",
   "POST /api/portal/guest": "createGuest",
   "GET /api/portal/guest/{id}": "getGuest",
   "POST /api/portal/guest/{eventId}/list": "listGuests",
@@ -75,6 +81,13 @@ const COVERED = {
   "DELETE /api/portal/custom-fields/{id}": "deleteCustomField",
   "PUT /api/portal/custom-fields/{id}/status": "changeCustomFieldStatus",
   "PUT /api/portal/custom-fields/{entityType}/reorder": "reorderCustomFields",
+
+  "GET /api/portal/event/list": "listEvents",
+  "GET /api/portal/event/list/contact/{contactId}": "listEventsByContact",
+  "GET /api/portal/event/list/contact/{contactId}/guests": "listGuestRecordsByContact",
+  "GET /api/portal/event/list/guest/{guestId}": "listEventsByGuest",
+  "GET /api/portal/invitation/list/contact/{contactId}": "listInvitationsByContact",
+  "GET /api/portal/invitation/list/guest/{guestId}": "listInvitationsByGuest",
 };
 
 /** Endpoints we've decided not to expose, and why. */

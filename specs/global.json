@@ -424,83 +424,1251 @@
           }
         ]
       }
+    },
+    "/api/portal/event/list": {
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "List the organization's events.",
+        "description": "Returns a paginated list of the events that belong to the organization the API key was issued to.\nThe organization is resolved from the key — there is no `OrganizationId` parameter, and events of\nany other organization are never returned.\n\n**Authentication:** Include `X-API-KEY` in the request header. An organization API key is the only\ncredential accepted — a bearer token is refused with `401`.\n\n**What is returned:**\n- Every active, top-level event of the organization — drafts included unless `Status` filters them out.\n- Sub-events and deleted events are not returned.\n- Dates (`StartDate`, `EndDate`, `DoorOpenDate`) are local times in the event's `EventTimeZone`.\n\n**Filtering (all optional, combined with AND):**\n- `Status` — `UPCOMING`, `HISTORY` or `DRAFT` (or `1`, `2`, `3`).\n- `SearchTerm` — partial match on title, venue name, start date (`DD Mon YYYY`) or confirmed-guest count.\n- `VenueId` — events at one venue.\n- `StartDate` — events starting within 24 hours of the given value (pass a date for \"that day\").\n\n**Ordering:** by `StartDate` ascending; `Status=HISTORY` orders newest first. With `SearchTerm`,\nbest matches (title, then date, then venue, then guest count) come first.\n\n**Pagination:** `PageNo` (1-based, default `1`) and `PageSize` (`1`–`100`, default `100`).\nA value outside those ranges is rejected with `400`. Keep requesting the next `PageNo` until it\nequals `pagination.totalPages`.\n\n**Response shape:**\n```json\n{\n  \"data\": [ { \"id\": \"…\", \"title\": \"…\", \"startDate\": \"…\", \"statusCode\": \"PUBLISHED\", … } ],\n  \"pagination\": {\n    \"totalCount\": 42,\n    \"page\": 1,\n    \"pageSize\": 20,\n    \"totalPages\": 3\n  }\n}\n```\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | `PageNo` / `PageSize` out of range, or an unrecognised `Status`. |\n| `401` | No key (a bearer token alone does not count), or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassGlobalAPIEndPointsEventsPortalPortalListEventsEndPoint",
+        "parameters": [
+          {
+            "name": "pageNo",
+            "in": "query",
+            "description": "The 1-based page number. Optional. Defaults to 1. Must be 1 or greater.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "description": "The number of events per page. Optional. Defaults to 100. Must be between 1 and 100.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Optional. Limits results by event state. Send the name or its number:\nUPCOMING (1) — published events that have not ended, or ended less than one day ago;\nHISTORY (2) — published events that ended more than one day ago;\nDRAFT (3) — events not yet published.\n\"Ended\" uses the end date (the start date when there is none) in the event's own time zone.\nOmit to return events in every state, drafts included.",
+            "schema": {
+              "nullable": true,
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/EventFilterStatus"
+                }
+              ]
+            }
+          },
+          {
+            "name": "searchTerm",
+            "in": "query",
+            "description": "Optional. Case-insensitive partial match on the event title, the venue name, the start date\nas DD Mon YYYY (e.g. 05 Nov 2026), or the number of confirmed guests.\nWhen set, results are ordered by match relevance instead of start date.",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "venueId",
+            "in": "query",
+            "description": "Optional. Returns only events held at this venue.",
+            "schema": {
+              "type": "string",
+              "format": "guid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "description": "Optional. Returns only events that start within the 24 hours from this value, compared against the\nevent's local start time. Pass a date (e.g. 2026-11-05) to get the events starting on that day.",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the organization's events, with pagination metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalPagedResponseOfPortalListEventsEndPointResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid paging or filter value."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/event/list/contact/{contactId}": {
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "List the organization's events a contact is invited to.",
+        "description": "Returns a paginated list of the API key organization's events that the contact is a guest of. Each item is\nthe same event object `GET /portal/event/list` returns.\n\n**Authentication:** Include `X-API-KEY` in the request header. An organization API key is the only\ncredential accepted — a bearer token is refused with `401`.\n\n**Who counts as the same person:** the guest or contact is matched to guest records across the organization's\nevents by phone number (exact) or email address (case-insensitive) — the same rule the AeonPass app uses to\nlink a contact to their events. A guest or contact of another organization returns `404`, exactly as one that\ndoes not exist.\n\n**Events in scope:** active, top-level events of the API key's organization — drafts included unless `Status`\nfilters them out. Sub-events and deleted events are not returned. Dates (`StartDate`, `EndDate`,\n`DoorOpenDate`) are local times in the event's `EventTimeZone`.\n\n**Event filters (all optional, combined with AND):**\n- `Status` — `UPCOMING`, `HISTORY` or `DRAFT` (or `1`, `2`, `3`).\n- `SearchTerm` — partial match on title, venue name, start date (`DD Mon YYYY`) or confirmed-guest count.\n- `VenueId` — events at one venue.\n- `StartDate` — events starting within 24 hours of the given value (pass a date for \"that day\").\n\n**Ordering:** by `StartDate` ascending; `Status=HISTORY` orders newest first. With `SearchTerm`,\nbest matches (title, then date, then venue, then guest count) come first.\n\n**Pagination:** `PageNo` (1-based, default `1`) and `PageSize` (`1`–`100`, default `100`).\nA value outside those ranges is rejected with `400`. Keep requesting the next `PageNo` until it\nequals `pagination.totalPages`.\n\n**Response shape:** `{ \"data\": [ event, … ], \"pagination\": { \"totalCount\", \"page\", \"pageSize\", \"totalPages\" } }`\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | `PageNo` / `PageSize` out of range, or an unrecognised `Status` (or `InvitationStatus`, on the invitation lists). |\n| `401` | No key (a bearer token alone does not count), or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The guest or contact does not exist in the API key's organization. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassGlobalAPIEndPointsEventsPortalPortalListContactEventsEndPoint",
+        "parameters": [
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "description": "The contact ID (as returned by the contact endpoints). Every guest record in the organization with the contact's phone or email counts.",
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          },
+          {
+            "name": "pageNo",
+            "in": "query",
+            "description": "The 1-based page number. Optional. Defaults to `1`. Must be `1` or greater.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "description": "The number of results per page. Optional. Defaults to `100`. Must be between `1` and `100`.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Optional. Limits results by event state. Send the name or its number: `UPCOMING` (`1`) — published events that have not ended, or ended less than one day ago; `HISTORY` (`2`) — published events that ended more than one day ago; `DRAFT` (`3`) — events not yet published. \"Ended\" uses the end date (the start date when there is none) in the event's own time zone. Omit to return events in every state, drafts included.",
+            "schema": {
+              "nullable": true,
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/EventFilterStatus"
+                }
+              ]
+            }
+          },
+          {
+            "name": "searchTerm",
+            "in": "query",
+            "description": "Optional. Case-insensitive partial match on the event title, the venue name, the start date as `DD Mon YYYY` (e.g. `05 Nov 2026`), or the number of confirmed guests. When set, results are ordered by match relevance instead of start date.",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "venueId",
+            "in": "query",
+            "description": "Optional. Returns only events held at this venue.",
+            "schema": {
+              "type": "string",
+              "format": "guid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "description": "Optional. Returns only events that start within the 24 hours from this value, compared against the event's local start time. Pass a date (e.g. `2026-11-05`) to get the events starting on that day.",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the events the contact is invited to, with pagination metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalPagedResponseOfPortalListEventsEndPointResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid paging or filter value."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The guest or contact does not exist in the API key's organization."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/event/list/contact/{contactId}/guests": {
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "List a contact's guest records across the organization's events.",
+        "description": "Returns a paginated list of the contact's guest records on the API key organization's events — one item per\nguest per event, with the guest's invitations and the event. Guests that were added to an event without an\ninvitation are included, with an empty `invitations` array.\n\n**Authentication:** Include `X-API-KEY` in the request header. An organization API key is the only\ncredential accepted — a bearer token is refused with `401`.\n\n**Who counts as the same person:** the guest or contact is matched to guest records across the organization's\nevents by phone number (exact) or email address (case-insensitive) — the same rule the AeonPass app uses to\nlink a contact to their events. A guest or contact of another organization returns `404`, exactly as one that\ndoes not exist.\n\n**Events in scope:** active, top-level events of the API key's organization — drafts included unless `Status`\nfilters them out. Sub-events and deleted events are not returned. Dates (`StartDate`, `EndDate`,\n`DoorOpenDate`) are local times in the event's `EventTimeZone`.\n\n**Event filters (all optional, combined with AND):**\n- `Status` — `UPCOMING`, `HISTORY` or `DRAFT` (or `1`, `2`, `3`).\n- `SearchTerm` — partial match on title, venue name, start date (`DD Mon YYYY`) or confirmed-guest count.\n- `VenueId` — events at one venue.\n- `StartDate` — events starting within 24 hours of the given value (pass a date for \"that day\").\n- `EventId` — the guest record of one event.\n\n**Ordering:** by the event's `StartDate` ascending (`Status=HISTORY`: newest first; with `SearchTerm`, best\nevent matches first), then newest guest record first. `invitations` are newest first.\n\n**Pagination:** `PageNo` (1-based, default `1`) and `PageSize` (`1`–`100`, default `100`).\nA value outside those ranges is rejected with `400`. Keep requesting the next `PageNo` until it\nequals `pagination.totalPages`. Pages count guest records, not invitations.\n\n**Response shape:**\n```json\n{\n  \"data\": [\n    {\n      \"guestId\": \"…\", \"eventId\": \"…\", \"userId\": null, \"phone\": \"…\", \"firstName\": \"Jane\",\n      \"lastName\": \"Doe\", \"email\": \"…\", \"groupName\": \"VIP\", \"displayName\": null,\n      \"invitations\": [\n        {\n          \"statusCode\": \"ACCEPTED\", \"invitationId\": \"…\", \"isAccepted\": true, \"intendedCount\": 1,\n          \"groupName\": \"VIP\", \"tierId\": null, \"isUnlimited\": false, \"guestPasses\": 2\n        }\n      ],\n      \"event\": { \"id\": \"…\", \"title\": \"…\", \"startDate\": \"…\", … }\n    }\n  ],\n  \"pagination\": { \"totalCount\": 3, \"page\": 1, \"pageSize\": 20, \"totalPages\": 1 }\n}\n```\n`event` is the same object `GET /portal/event/list` returns.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | `PageNo` / `PageSize` out of range, or an unrecognised `Status` (or `InvitationStatus`, on the invitation lists). |\n| `401` | No key (a bearer token alone does not count), or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The guest or contact does not exist in the API key's organization. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassGlobalAPIEndPointsEventsPortalPortalListContactGuestsEndPoint",
+        "parameters": [
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "description": "The contact ID (as returned by the contact endpoints). Every guest record in the organization with the contact's phone or email counts.",
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          },
+          {
+            "name": "eventId",
+            "in": "query",
+            "description": "Optional. Returns only the guest record of this event.",
+            "schema": {
+              "type": "string",
+              "format": "guid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "pageNo",
+            "in": "query",
+            "description": "The 1-based page number. Optional. Defaults to `1`. Must be `1` or greater.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "description": "The number of results per page. Optional. Defaults to `100`. Must be between `1` and `100`.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Optional. Limits results by event state. Send the name or its number: `UPCOMING` (`1`) — published events that have not ended, or ended less than one day ago; `HISTORY` (`2`) — published events that ended more than one day ago; `DRAFT` (`3`) — events not yet published. \"Ended\" uses the end date (the start date when there is none) in the event's own time zone. Omit to return events in every state, drafts included.",
+            "schema": {
+              "nullable": true,
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/EventFilterStatus"
+                }
+              ]
+            }
+          },
+          {
+            "name": "searchTerm",
+            "in": "query",
+            "description": "Optional. Case-insensitive partial match on the event title, the venue name, the start date as `DD Mon YYYY` (e.g. `05 Nov 2026`), or the number of confirmed guests. When set, results are ordered by match relevance instead of start date.",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "venueId",
+            "in": "query",
+            "description": "Optional. Returns only events held at this venue.",
+            "schema": {
+              "type": "string",
+              "format": "guid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "description": "Optional. Returns only events that start within the 24 hours from this value, compared against the event's local start time. Pass a date (e.g. `2026-11-05`) to get the events starting on that day.",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the contact's guest records, with pagination metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalPagedResponseOfPortalGuestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid paging or filter value."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The guest or contact does not exist in the API key's organization."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/event/list/guest/{guestId}": {
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "List the organization's events a guest is invited to.",
+        "description": "Returns a paginated list of the API key organization's events that the guest is a guest of. Each item is\nthe same event object `GET /portal/event/list` returns.\n\n**Authentication:** Include `X-API-KEY` in the request header. An organization API key is the only\ncredential accepted — a bearer token is refused with `401`.\n\n**Who counts as the same person:** the guest or contact is matched to guest records across the organization's\nevents by phone number (exact) or email address (case-insensitive) — the same rule the AeonPass app uses to\nlink a contact to their events. A guest or contact of another organization returns `404`, exactly as one that\ndoes not exist.\n\n**Events in scope:** active, top-level events of the API key's organization — drafts included unless `Status`\nfilters them out. Sub-events and deleted events are not returned. Dates (`StartDate`, `EndDate`,\n`DoorOpenDate`) are local times in the event's `EventTimeZone`.\n\n**Event filters (all optional, combined with AND):**\n- `Status` — `UPCOMING`, `HISTORY` or `DRAFT` (or `1`, `2`, `3`).\n- `SearchTerm` — partial match on title, venue name, start date (`DD Mon YYYY`) or confirmed-guest count.\n- `VenueId` — events at one venue.\n- `StartDate` — events starting within 24 hours of the given value (pass a date for \"that day\").\n\n**Ordering:** by `StartDate` ascending; `Status=HISTORY` orders newest first. With `SearchTerm`,\nbest matches (title, then date, then venue, then guest count) come first.\n\n**Pagination:** `PageNo` (1-based, default `1`) and `PageSize` (`1`–`100`, default `100`).\nA value outside those ranges is rejected with `400`. Keep requesting the next `PageNo` until it\nequals `pagination.totalPages`.\n\n**Response shape:** `{ \"data\": [ event, … ], \"pagination\": { \"totalCount\", \"page\", \"pageSize\", \"totalPages\" } }`\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | `PageNo` / `PageSize` out of range, or an unrecognised `Status` (or `InvitationStatus`, on the invitation lists). |\n| `401` | No key (a bearer token alone does not count), or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The guest or contact does not exist in the API key's organization. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassGlobalAPIEndPointsEventsPortalPortalListGuestEventsEndPoint",
+        "parameters": [
+          {
+            "name": "guestId",
+            "in": "path",
+            "required": true,
+            "description": "The guest ID (as returned by the guest endpoints). Every guest record in the organization with the same phone or email counts as the same person.",
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          },
+          {
+            "name": "pageNo",
+            "in": "query",
+            "description": "The 1-based page number. Optional. Defaults to `1`. Must be `1` or greater.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "description": "The number of results per page. Optional. Defaults to `100`. Must be between `1` and `100`.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Optional. Limits results by event state. Send the name or its number: `UPCOMING` (`1`) — published events that have not ended, or ended less than one day ago; `HISTORY` (`2`) — published events that ended more than one day ago; `DRAFT` (`3`) — events not yet published. \"Ended\" uses the end date (the start date when there is none) in the event's own time zone. Omit to return events in every state, drafts included.",
+            "schema": {
+              "nullable": true,
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/EventFilterStatus"
+                }
+              ]
+            }
+          },
+          {
+            "name": "searchTerm",
+            "in": "query",
+            "description": "Optional. Case-insensitive partial match on the event title, the venue name, the start date as `DD Mon YYYY` (e.g. `05 Nov 2026`), or the number of confirmed guests. When set, results are ordered by match relevance instead of start date.",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "venueId",
+            "in": "query",
+            "description": "Optional. Returns only events held at this venue.",
+            "schema": {
+              "type": "string",
+              "format": "guid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "description": "Optional. Returns only events that start within the 24 hours from this value, compared against the event's local start time. Pass a date (e.g. `2026-11-05`) to get the events starting on that day.",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the events the guest is invited to, with pagination metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalPagedResponseOfPortalListEventsEndPointResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid paging or filter value."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The guest or contact does not exist in the API key's organization."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/invitation/list/contact/{contactId}": {
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "List a contact's invitations to the organization's events.",
+        "description": "Returns a paginated list of the contact's invitations to the API key organization's events, each with the guest and the event.\n\n**Authentication:** Include `X-API-KEY` in the request header. An organization API key is the only\ncredential accepted — a bearer token is refused with `401`.\n\n**Who counts as the same person:** the guest or contact is matched to guest records across the organization's\nevents by phone number (exact) or email address (case-insensitive) — the same rule the AeonPass app uses to\nlink a contact to their events. A guest or contact of another organization returns `404`, exactly as one that\ndoes not exist.\n\n**Events in scope:** active, top-level events of the API key's organization — drafts included unless `Status`\nfilters them out. Sub-events and deleted events are not returned. Dates (`StartDate`, `EndDate`,\n`DoorOpenDate`) are local times in the event's `EventTimeZone`.\n\n**Event filters (all optional, combined with AND):**\n- `Status` — `UPCOMING`, `HISTORY` or `DRAFT` (or `1`, `2`, `3`).\n- `SearchTerm` — partial match on title, venue name, start date (`DD Mon YYYY`) or confirmed-guest count.\n- `VenueId` — events at one venue.\n- `StartDate` — events starting within 24 hours of the given value (pass a date for \"that day\").\n\n**Invitation filters (optional):**\n- `InvitationStatus` — `CREATED`, `SENT`, `VIEWED`, `ACCEPTED`, `DECLINED`, `VOIDED`, `EXPIRED`, `ADMITTED`,\n  `CANCELLED` or `PURCHASED`.\n- `EventId` — invitations to one event.\n\n**Ordering:** by the event's `StartDate` ascending (`Status=HISTORY`: newest first; with `SearchTerm`, best\nevent matches first), then newest invitation first within an event.\n\n**Pagination:** `PageNo` (1-based, default `1`) and `PageSize` (`1`–`100`, default `100`).\nA value outside those ranges is rejected with `400`. Keep requesting the next `PageNo` until it\nequals `pagination.totalPages`.\n\n**Response shape:**\n```json\n{\n  \"data\": [\n    {\n      \"invitationId\": \"…\", \"status\": \"ACCEPTED\", \"isAccepted\": true, \"intendedCount\": 1,\n      \"isUnlimited\": false, \"guestPasses\": 2, \"tierId\": null,\n      \"guest\": { \"id\": \"…\", \"firstName\": \"Jane\", \"lastName\": \"Doe\", \"phone\": \"…\", \"email\": \"…\", … },\n      \"event\": { \"id\": \"…\", \"title\": \"…\", \"startDate\": \"…\", … }\n    }\n  ],\n  \"pagination\": { \"totalCount\": 3, \"page\": 1, \"pageSize\": 20, \"totalPages\": 1 }\n}\n```\n`event` is the same object `GET /portal/event/list` returns.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | `PageNo` / `PageSize` out of range, or an unrecognised `Status` (or `InvitationStatus`, on the invitation lists). |\n| `401` | No key (a bearer token alone does not count), or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The guest or contact does not exist in the API key's organization. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassGlobalAPIEndPointsInvitationsPortalPortalListContactInvitationsEndPoint",
+        "parameters": [
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "description": "The contact ID (as returned by the contact endpoints). Every guest record in the organization with the contact's phone or email counts.",
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          },
+          {
+            "name": "invitationStatus",
+            "in": "query",
+            "description": "Optional. Returns only invitations in this status (case-insensitive): `CREATED`, `SENT`, `VIEWED`, `ACCEPTED`, `DECLINED`, `VOIDED`, `EXPIRED`, `ADMITTED`, `CANCELLED` or `PURCHASED`.",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "eventId",
+            "in": "query",
+            "description": "Optional. Returns only invitations to this event.",
+            "schema": {
+              "type": "string",
+              "format": "guid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "pageNo",
+            "in": "query",
+            "description": "The 1-based page number. Optional. Defaults to `1`. Must be `1` or greater.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "description": "The number of results per page. Optional. Defaults to `100`. Must be between `1` and `100`.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Optional. Limits results by event state. Send the name or its number: `UPCOMING` (`1`) — published events that have not ended, or ended less than one day ago; `HISTORY` (`2`) — published events that ended more than one day ago; `DRAFT` (`3`) — events not yet published. \"Ended\" uses the end date (the start date when there is none) in the event's own time zone. Omit to return events in every state, drafts included.",
+            "schema": {
+              "nullable": true,
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/EventFilterStatus"
+                }
+              ]
+            }
+          },
+          {
+            "name": "searchTerm",
+            "in": "query",
+            "description": "Optional. Case-insensitive partial match on the event title, the venue name, the start date as `DD Mon YYYY` (e.g. `05 Nov 2026`), or the number of confirmed guests. When set, results are ordered by match relevance instead of start date.",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "venueId",
+            "in": "query",
+            "description": "Optional. Returns only events held at this venue.",
+            "schema": {
+              "type": "string",
+              "format": "guid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "description": "Optional. Returns only events that start within the 24 hours from this value, compared against the event's local start time. Pass a date (e.g. `2026-11-05`) to get the events starting on that day.",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the contact's invitations, with pagination metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalPagedResponseOfPortalInvitationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid paging or filter value."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The guest or contact does not exist in the API key's organization."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/invitation/list/guest/{guestId}": {
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "List a guest's invitations to the organization's events.",
+        "description": "Returns a paginated list of the guest's invitations to the API key organization's events, each with the guest and the event.\n\n**Authentication:** Include `X-API-KEY` in the request header. An organization API key is the only\ncredential accepted — a bearer token is refused with `401`.\n\n**Who counts as the same person:** the guest or contact is matched to guest records across the organization's\nevents by phone number (exact) or email address (case-insensitive) — the same rule the AeonPass app uses to\nlink a contact to their events. A guest or contact of another organization returns `404`, exactly as one that\ndoes not exist.\n\n**Events in scope:** active, top-level events of the API key's organization — drafts included unless `Status`\nfilters them out. Sub-events and deleted events are not returned. Dates (`StartDate`, `EndDate`,\n`DoorOpenDate`) are local times in the event's `EventTimeZone`.\n\n**Event filters (all optional, combined with AND):**\n- `Status` — `UPCOMING`, `HISTORY` or `DRAFT` (or `1`, `2`, `3`).\n- `SearchTerm` — partial match on title, venue name, start date (`DD Mon YYYY`) or confirmed-guest count.\n- `VenueId` — events at one venue.\n- `StartDate` — events starting within 24 hours of the given value (pass a date for \"that day\").\n\n**Invitation filters (optional):**\n- `InvitationStatus` — `CREATED`, `SENT`, `VIEWED`, `ACCEPTED`, `DECLINED`, `VOIDED`, `EXPIRED`, `ADMITTED`,\n  `CANCELLED` or `PURCHASED`.\n- `EventId` — invitations to one event.\n\n**Ordering:** by the event's `StartDate` ascending (`Status=HISTORY`: newest first; with `SearchTerm`, best\nevent matches first), then newest invitation first within an event.\n\n**Pagination:** `PageNo` (1-based, default `1`) and `PageSize` (`1`–`100`, default `100`).\nA value outside those ranges is rejected with `400`. Keep requesting the next `PageNo` until it\nequals `pagination.totalPages`.\n\n**Response shape:**\n```json\n{\n  \"data\": [\n    {\n      \"invitationId\": \"…\", \"status\": \"ACCEPTED\", \"isAccepted\": true, \"intendedCount\": 1,\n      \"isUnlimited\": false, \"guestPasses\": 2, \"tierId\": null,\n      \"guest\": { \"id\": \"…\", \"firstName\": \"Jane\", \"lastName\": \"Doe\", \"phone\": \"…\", \"email\": \"…\", … },\n      \"event\": { \"id\": \"…\", \"title\": \"…\", \"startDate\": \"…\", … }\n    }\n  ],\n  \"pagination\": { \"totalCount\": 3, \"page\": 1, \"pageSize\": 20, \"totalPages\": 1 }\n}\n```\n`event` is the same object `GET /portal/event/list` returns.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | `PageNo` / `PageSize` out of range, or an unrecognised `Status` (or `InvitationStatus`, on the invitation lists). |\n| `401` | No key (a bearer token alone does not count), or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The guest or contact does not exist in the API key's organization. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassGlobalAPIEndPointsInvitationsPortalPortalListGuestInvitationsEndPoint",
+        "parameters": [
+          {
+            "name": "guestId",
+            "in": "path",
+            "required": true,
+            "description": "The guest ID (as returned by the guest endpoints). Every guest record in the organization with the same phone or email counts as the same person.",
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          },
+          {
+            "name": "invitationStatus",
+            "in": "query",
+            "description": "Optional. Returns only invitations in this status (case-insensitive): `CREATED`, `SENT`, `VIEWED`, `ACCEPTED`, `DECLINED`, `VOIDED`, `EXPIRED`, `ADMITTED`, `CANCELLED` or `PURCHASED`.",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "eventId",
+            "in": "query",
+            "description": "Optional. Returns only invitations to this event.",
+            "schema": {
+              "type": "string",
+              "format": "guid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "pageNo",
+            "in": "query",
+            "description": "The 1-based page number. Optional. Defaults to `1`. Must be `1` or greater.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "description": "The number of results per page. Optional. Defaults to `100`. Must be between `1` and `100`.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Optional. Limits results by event state. Send the name or its number: `UPCOMING` (`1`) — published events that have not ended, or ended less than one day ago; `HISTORY` (`2`) — published events that ended more than one day ago; `DRAFT` (`3`) — events not yet published. \"Ended\" uses the end date (the start date when there is none) in the event's own time zone. Omit to return events in every state, drafts included.",
+            "schema": {
+              "nullable": true,
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/EventFilterStatus"
+                }
+              ]
+            }
+          },
+          {
+            "name": "searchTerm",
+            "in": "query",
+            "description": "Optional. Case-insensitive partial match on the event title, the venue name, the start date as `DD Mon YYYY` (e.g. `05 Nov 2026`), or the number of confirmed guests. When set, results are ordered by match relevance instead of start date.",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "venueId",
+            "in": "query",
+            "description": "Optional. Returns only events held at this venue.",
+            "schema": {
+              "type": "string",
+              "format": "guid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "description": "Optional. Returns only events that start within the 24 hours from this value, compared against the event's local start time. Pass a date (e.g. `2026-11-05`) to get the events starting on that day.",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the guest's invitations, with pagination metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalPagedResponseOfPortalInvitationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid paging or filter value."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The guest or contact does not exist in the API key's organization."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
     }
   },
   "components": {
     "schemas": {
-      "CreateCustomFieldDefinitionEndPointRequest": {
+      "PortalPagedResponseOfPortalInvitationResponse": {
         "type": "object",
+        "description": "A page of results from a portal list endpoint.",
         "additionalProperties": false,
         "properties": {
-          "entityType": {
-            "type": "string"
+          "data": {
+            "type": "array",
+            "description": "The items on the requested page. Empty when the page is past the last result.",
+            "items": {
+              "$ref": "#/components/schemas/PortalInvitationResponse"
+            }
           },
-          "scopeEntityType": {
+          "pagination": {
+            "description": "Where this page sits in the full result set.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PortalPagination"
+              }
+            ]
+          }
+        }
+      },
+      "PortalInvitationResponse": {
+        "type": "object",
+        "description": "One invitation to one of the organization's events, with the invited guest and the event.",
+        "additionalProperties": false,
+        "properties": {
+          "invitationId": {
             "type": "string",
-            "nullable": true
-          },
-          "scopeId": {
-            "type": "string",
-            "format": "guid",
-            "nullable": true
-          },
-          "fieldNamespace": {
-            "type": "string"
-          },
-          "fieldKey": {
-            "type": "string"
-          },
-          "label": {
-            "type": "string"
-          },
-          "helperText": {
-            "type": "string",
-            "nullable": true
-          },
-          "dataType": {
-            "type": "string"
-          },
-          "widgetType": {
-            "type": "string",
-            "nullable": true
-          },
-          "cardinality": {
-            "type": "string",
-            "nullable": true
-          },
-          "isMandatory": {
-            "type": "boolean"
-          },
-          "isPii": {
-            "type": "boolean"
+            "description": "The invitation ID.",
+            "format": "guid"
           },
           "status": {
             "type": "string",
+            "description": "The invitation status: CREATED, SENT, VIEWED, ACCEPTED, DECLINED,\nVOIDED, EXPIRED, ADMITTED, CANCELLED or PURCHASED.",
             "nullable": true
           },
-          "validationRules": {
-            "type": "object",
-            "nullable": true,
-            "additionalProperties": {}
-          },
-          "uiHints": {
-            "type": "object",
-            "nullable": true,
-            "additionalProperties": {}
-          },
-          "groupKey": {
-            "type": "string",
+          "isAccepted": {
+            "type": "boolean",
+            "description": "Whether the guest has accepted the invitation.",
             "nullable": true
           },
-          "orderIndex": {
+          "intendedCount": {
             "type": "integer",
+            "description": "The number of extra guests the guest said they will bring.",
+            "format": "int32",
+            "nullable": true
+          },
+          "isUnlimited": {
+            "type": "boolean",
+            "description": "True when the invitation allows an unlimited number of extra guests; GuestPasses is then not a limit."
+          },
+          "guestPasses": {
+            "type": "integer",
+            "description": "The number of extra guests the invitation allows, when IsUnlimited is false.",
+            "format": "int32",
+            "nullable": true
+          },
+          "tierId": {
+            "type": "string",
+            "description": "The ticket tier ID, for an invitation to a ticketed event.",
+            "format": "guid",
+            "nullable": true
+          },
+          "guest": {
+            "description": "The guest this invitation was sent to.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PortalInvitationGuestResponse"
+              }
+            ]
+          },
+          "event": {
+            "description": "The event — the same object GET /portal/event/list returns.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PortalListEventsEndPointResponse"
+              }
+            ]
+          }
+        }
+      },
+      "PortalInvitationGuestResponse": {
+        "type": "object",
+        "description": "The guest an invitation was sent to. A guest belongs to one event; the same person invited to several events\nhas one guest per event.",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The guest ID, for use with the guest endpoints.",
+            "format": "guid"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "The guest's first name.",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "description": "The guest's last name.",
+            "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "description": "The guest's display name, when set.",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "description": "The guest's phone number.",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "description": "The guest's email address.",
+            "nullable": true
+          },
+          "groupName": {
+            "type": "string",
+            "description": "The name of the guest group the guest belongs to, when any.",
+            "nullable": true
+          },
+          "guestUserId": {
+            "type": "string",
+            "description": "The guest's AeonPass user account ID, when the guest has an account.",
+            "format": "guid",
+            "nullable": true
+          }
+        }
+      },
+      "PortalListEventsEndPointResponse": {
+        "type": "object",
+        "description": "One event in the organization's event list.",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The event ID. Use it with GET /portal/event/{Id} for full details, or with the guest endpoints.",
+            "format": "guid"
+          },
+          "organizationId": {
+            "type": "string",
+            "description": "The organization that owns the event — always the API key's organization.",
+            "format": "guid"
+          },
+          "title": {
+            "type": "string",
+            "description": "The event title."
+          },
+          "description": {
+            "type": "string",
+            "description": "The event description.",
+            "nullable": true
+          },
+          "startDate": {
+            "type": "string",
+            "description": "When the event starts, as local time in EventTimeZone.",
+            "format": "date-time"
+          },
+          "endDate": {
+            "type": "string",
+            "description": "When the event ends, as local time in EventTimeZone. Null when no end is set.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "doorOpenDate": {
+            "type": "string",
+            "description": "When doors open, as local time in EventTimeZone. Null when not set.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "eventTimeZone": {
+            "type": "string",
+            "description": "The IANA time zone the event's dates are expressed in.",
+            "nullable": true
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "The event's publication state: DRAFT or PUBLISHED.",
+            "nullable": true
+          },
+          "isRunning": {
+            "type": "boolean",
+            "description": "True while a published event is in progress — between its start and end in its own time zone."
+          },
+          "maximumGuests": {
+            "type": "integer",
+            "description": "The guest capacity, when one is set.",
+            "format": "int32",
+            "nullable": true
+          },
+          "totalComing": {
+            "type": "integer",
+            "description": "Confirmed attendance: accepted invitations and purchased tickets, plus the extra guests those confirmed guests declared.",
+            "format": "int32",
+            "nullable": true
+          },
+          "totalAdmitted": {
+            "type": "integer",
+            "description": "Guests already admitted (scanned in).",
+            "format": "int32",
+            "nullable": true
+          },
+          "venueId": {
+            "type": "string",
+            "description": "The venue ID. Null when the event has no saved venue.",
+            "format": "guid",
+            "nullable": true
+          },
+          "venueName": {
+            "type": "string",
+            "description": "The venue name.",
+            "nullable": true
+          },
+          "isVenueHidden": {
+            "type": "boolean",
+            "description": "True when the organization hides the venue from guests. The venue fields are still returned here,\nbecause the caller is the owning organization; do not show them to guests when this is true."
+          },
+          "addressLine1": {
+            "type": "string",
+            "description": "First line of the venue address.",
+            "nullable": true
+          },
+          "addressLine2": {
+            "type": "string",
+            "description": "Second line of the venue address.",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "description": "Venue city.",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "description": "Venue state or region.",
+            "nullable": true
+          },
+          "country": {
+            "type": "string",
+            "description": "Venue country.",
+            "nullable": true
+          },
+          "zipcode": {
+            "type": "string",
+            "description": "Venue postal code.",
+            "nullable": true
+          },
+          "latitude": {
+            "type": "number",
+            "description": "Venue latitude.",
+            "format": "double",
+            "nullable": true
+          },
+          "longitude": {
+            "type": "number",
+            "description": "Venue longitude.",
+            "format": "double",
+            "nullable": true
+          },
+          "designId": {
+            "type": "string",
+            "description": "The ID of the event's pass design.",
+            "format": "guid",
+            "nullable": true
+          },
+          "shapeName": {
+            "type": "string",
+            "description": "The design's shape name.",
+            "nullable": true
+          },
+          "shapeValue": {
+            "type": "string",
+            "description": "The design's shape value.",
+            "nullable": true
+          },
+          "colorName": {
+            "type": "string",
+            "description": "The design's color name.",
+            "nullable": true
+          },
+          "colorValue": {
+            "type": "string",
+            "description": "The design's color value.",
+            "nullable": true
+          },
+          "imageUrl": {
+            "type": "string",
+            "description": "URL of the event's image.",
+            "nullable": true
+          }
+        }
+      },
+      "PortalPagination": {
+        "type": "object",
+        "description": "Pagination metadata for a portal list response.",
+        "additionalProperties": false,
+        "properties": {
+          "totalCount": {
+            "type": "integer",
+            "description": "Total number of items matching the request's filters, across all pages.",
             "format": "int32"
           },
-          "options": {
+          "page": {
+            "type": "integer",
+            "description": "The 1-based page number this response holds.",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "The page size applied to this response.",
+            "format": "int32"
+          },
+          "totalPages": {
+            "type": "integer",
+            "description": "Total number of pages at this page size. 0 when nothing matches.",
+            "format": "int32"
+          }
+        }
+      },
+      "EventFilterStatus": {
+        "type": "integer",
+        "description": "",
+        "x-enumNames": [
+          "UPCOMING",
+          "HISTORY",
+          "DRAFT"
+        ],
+        "enum": [
+          1,
+          2,
+          3
+        ]
+      },
+      "PortalPagedResponseOfPortalListEventsEndPointResponse": {
+        "type": "object",
+        "description": "A page of results from a portal list endpoint.",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
             "type": "array",
+            "description": "The items on the requested page. Empty when the page is past the last result.",
             "items": {
-              "$ref": "#/components/schemas/CustomFieldOptionInputDto"
+              "$ref": "#/components/schemas/PortalListEventsEndPointResponse"
             }
+          },
+          "pagination": {
+            "description": "Where this page sits in the full result set.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PortalPagination"
+              }
+            ]
+          }
+        }
+      },
+      "PortalPagedResponseOfPortalGuestResponse": {
+        "type": "object",
+        "description": "A page of results from a portal list endpoint.",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "array",
+            "description": "The items on the requested page. Empty when the page is past the last result.",
+            "items": {
+              "$ref": "#/components/schemas/PortalGuestResponse"
+            }
+          },
+          "pagination": {
+            "description": "Where this page sits in the full result set.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PortalPagination"
+              }
+            ]
+          }
+        }
+      },
+      "PortalGuestResponse": {
+        "type": "object",
+        "description": "One guest record of one of the organization's events, with the guest's invitations and the event.\nA guest belongs to one event; the same person on several events has one guest record per event.",
+        "additionalProperties": false,
+        "properties": {
+          "guestId": {
+            "type": "string",
+            "description": "The guest ID, for use with the guest endpoints.",
+            "format": "guid"
+          },
+          "eventId": {
+            "type": "string",
+            "description": "The ID of the event the guest belongs to (the same as event.id).",
+            "format": "guid"
+          },
+          "userId": {
+            "type": "string",
+            "description": "The guest's AeonPass user account ID, when the guest has an account.",
+            "format": "guid",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "description": "The guest's phone number.",
+            "nullable": true
+          },
+          "firstName": {
+            "type": "string",
+            "description": "The guest's first name.",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "description": "The guest's last name.",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "description": "The guest's email address.",
+            "nullable": true
+          },
+          "groupName": {
+            "type": "string",
+            "description": "The name of the guest group the guest belongs to, when any.",
+            "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "description": "The guest's display name, when set.",
+            "nullable": true
+          },
+          "invitations": {
+            "type": "array",
+            "description": "The guest's invitations to the event, newest first. Empty when the guest has not been invited.",
+            "items": {
+              "$ref": "#/components/schemas/PortalGuestInvitationResponse"
+            }
+          },
+          "event": {
+            "description": "The event — the same object GET /portal/event/list returns.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PortalListEventsEndPointResponse"
+              }
+            ]
+          }
+        }
+      },
+      "PortalGuestInvitationResponse": {
+        "type": "object",
+        "description": "One invitation of the guest to the event.",
+        "additionalProperties": false,
+        "properties": {
+          "statusCode": {
+            "type": "string",
+            "description": "The invitation status: CREATED, SENT, VIEWED, ACCEPTED, DECLINED,\nVOIDED, EXPIRED, ADMITTED, CANCELLED or PURCHASED.",
+            "nullable": true
+          },
+          "invitationId": {
+            "type": "string",
+            "description": "The invitation ID.",
+            "format": "guid"
+          },
+          "isAccepted": {
+            "type": "boolean",
+            "description": "Whether the guest has accepted the invitation.",
+            "nullable": true
+          },
+          "intendedCount": {
+            "type": "integer",
+            "description": "The number of extra guests the guest said they will bring.",
+            "format": "int32",
+            "nullable": true
+          },
+          "groupName": {
+            "type": "string",
+            "description": "The name of the guest group, when any.",
+            "nullable": true
+          },
+          "tierId": {
+            "type": "string",
+            "description": "The ticket tier ID, for an invitation to a ticketed event.",
+            "format": "guid",
+            "nullable": true
+          },
+          "isUnlimited": {
+            "type": "boolean",
+            "description": "True when the invitation allows an unlimited number of extra guests; GuestPasses is then not a limit."
+          },
+          "guestPasses": {
+            "type": "integer",
+            "description": "The number of extra guests the invitation allows, when IsUnlimited is false.",
+            "format": "int32",
+            "nullable": true
           }
         }
       },
@@ -582,71 +1750,54 @@
           }
         }
       },
-      "ReorderCustomFieldDefinitionsEndPointRequest": {
+      "CustomFieldOptionDto": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "ordering": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CustomFieldOrderItemDto"
-            }
-          }
-        }
-      },
-      "PatchCustomFieldDefinitionEndPointRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "fieldKey": {
-            "$ref": "#/components/schemas/PatchFieldOfString"
+          "id": {
+            "type": "string",
+            "format": "guid"
           },
-          "label": {
-            "$ref": "#/components/schemas/PatchFieldOfString"
+          "optionValue": {
+            "type": "string"
           },
-          "helperText": {
-            "$ref": "#/components/schemas/PatchFieldOfString"
-          },
-          "dataType": {
-            "$ref": "#/components/schemas/PatchFieldOfString"
-          },
-          "widgetType": {
-            "$ref": "#/components/schemas/PatchFieldOfString"
-          },
-          "cardinality": {
-            "$ref": "#/components/schemas/PatchFieldOfString"
-          },
-          "isMandatory": {
-            "$ref": "#/components/schemas/PatchFieldOfNullableOfBoolean"
-          },
-          "isPii": {
-            "$ref": "#/components/schemas/PatchFieldOfNullableOfBoolean"
-          },
-          "validationRules": {
-            "$ref": "#/components/schemas/PatchFieldOfDictionaryOfStringAndObject"
-          },
-          "uiHints": {
-            "$ref": "#/components/schemas/PatchFieldOfDictionaryOfStringAndObject"
-          },
-          "groupKey": {
-            "$ref": "#/components/schemas/PatchFieldOfString"
+          "optionLabel": {
+            "type": "string"
           },
           "orderIndex": {
-            "$ref": "#/components/schemas/PatchFieldOfNullableOfInt32"
-          },
-          "options": {
-            "type": "array",
-            "nullable": true,
-            "items": {
-              "$ref": "#/components/schemas/CustomFieldOptionInputDto"
-            }
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
-      "UpdateCustomFieldDefinitionEndPointRequest": {
+      "ChangeCustomFieldDefinitionStatusEndPointRequest": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateCustomFieldDefinitionEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entityType": {
+            "type": "string"
+          },
+          "scopeEntityType": {
+            "type": "string",
+            "nullable": true
+          },
+          "scopeId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "fieldNamespace": {
+            "type": "string"
+          },
           "fieldKey": {
             "type": "string"
           },
@@ -673,6 +1824,10 @@
           },
           "isPii": {
             "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
           },
           "validationRules": {
             "type": "object",
@@ -694,19 +1849,31 @@
           },
           "options": {
             "type": "array",
-            "nullable": true,
             "items": {
               "$ref": "#/components/schemas/CustomFieldOptionInputDto"
             }
           }
         }
       },
-      "ChangeCustomFieldDefinitionStatusEndPointRequest": {
+      "CustomFieldOptionInputDto": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "status": {
+          "id": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "optionLabel": {
             "type": "string"
+          },
+          "optionValue": {
+            "type": "string",
+            "nullable": true
+          },
+          "orderIndex": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -770,59 +1937,52 @@
           }
         }
       },
-      "CustomFieldOptionInputDto": {
+      "PatchCustomFieldDefinitionEndPointRequest": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "id": {
-            "type": "string",
-            "format": "guid",
-            "nullable": true
+          "fieldKey": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
           },
-          "optionLabel": {
-            "type": "string"
+          "label": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
           },
-          "optionValue": {
-            "type": "string",
-            "nullable": true
+          "helperText": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
           },
-          "orderIndex": {
-            "type": "integer",
-            "format": "int32"
-          }
-        }
-      },
-      "CustomFieldOptionDto": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "guid"
+          "dataType": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
           },
-          "optionValue": {
-            "type": "string"
+          "widgetType": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
           },
-          "optionLabel": {
-            "type": "string"
+          "cardinality": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
           },
-          "orderIndex": {
-            "type": "integer",
-            "format": "int32"
-          }
-        }
-      },
-      "CustomFieldOrderItemDto": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "guid"
+          "isMandatory": {
+            "$ref": "#/components/schemas/PatchFieldOfNullableOfBoolean"
+          },
+          "isPii": {
+            "$ref": "#/components/schemas/PatchFieldOfNullableOfBoolean"
+          },
+          "validationRules": {
+            "$ref": "#/components/schemas/PatchFieldOfDictionaryOfStringAndObject"
+          },
+          "uiHints": {
+            "$ref": "#/components/schemas/PatchFieldOfDictionaryOfStringAndObject"
+          },
+          "groupKey": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
           },
           "orderIndex": {
-            "type": "integer",
-            "format": "int32"
+            "$ref": "#/components/schemas/PatchFieldOfNullableOfInt32"
+          },
+          "options": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/CustomFieldOptionInputDto"
+            }
           }
         }
       },
@@ -855,6 +2015,110 @@
         "format": "int32",
         "nullable": true,
         "additionalProperties": false
+      },
+      "ReorderCustomFieldDefinitionsEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ordering": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomFieldOrderItemDto"
+            }
+          }
+        }
+      },
+      "CustomFieldOrderItemDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "orderIndex": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "UpdateCustomFieldDefinitionEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fieldKey": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "helperText": {
+            "type": "string",
+            "nullable": true
+          },
+          "dataType": {
+            "type": "string"
+          },
+          "widgetType": {
+            "type": "string",
+            "nullable": true
+          },
+          "cardinality": {
+            "type": "string",
+            "nullable": true
+          },
+          "isMandatory": {
+            "type": "boolean"
+          },
+          "isPii": {
+            "type": "boolean"
+          },
+          "validationRules": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {}
+          },
+          "uiHints": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {}
+          },
+          "groupKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "orderIndex": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "options": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/CustomFieldOptionInputDto"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "JWTBearerAuth": {
+        "type": "http",
+        "description": "Enter a JWT token to authorize the requests...",
+        "scheme": "Bearer",
+        "bearerFormat": "JWT"
+      },
+      "Bearer": {
+        "type": "http",
+        "description": "AeonPass JWT. Paste just the token — Swagger adds the 'Bearer ' prefix.",
+        "scheme": "Bearer",
+        "bearerFormat": "JWT"
+      },
+      "X-API-KEY": {
+        "type": "apiKey",
+        "description": "Organization API key for portal/integration endpoints. Include as the `X-API-KEY` request header.",
+        "name": "X-API-KEY",
+        "in": "header"
       }
     }
   }

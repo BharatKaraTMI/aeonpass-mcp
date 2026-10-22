@@ -553,6 +553,35 @@
           },
           "isUserAccountDeleted": {
             "type": "boolean"
+          },
+          "customFields": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/ContactCustomFieldValueDto"
+            }
+          }
+        }
+      },
+      "ContactCustomFieldValueDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "fieldKey": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "dataType": {
+            "type": "string"
+          },
+          "value": {
+            "nullable": true
           }
         }
       },
@@ -827,6 +856,10 @@
             "type": "string",
             "format": "binary",
             "nullable": true
+          },
+          "customFields": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -945,6 +978,10 @@
           "profilePhoto": {
             "type": "string",
             "format": "binary",
+            "nullable": true
+          },
+          "customFields": {
+            "type": "string",
             "nullable": true
           }
         }

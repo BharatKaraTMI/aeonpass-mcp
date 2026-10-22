@@ -67,6 +67,62 @@ export interface CustomFieldOptionInput {
   orderIndex?: number;
 }
 
+/**
+ * The event filters shared by every `/event/list*` and `/invitation/list*`
+ * read. `status` goes on the wire by name; the API also takes `1`–`3`, and an
+ * unrecognised value is a 400 rather than being ignored. `pageSize` is capped
+ * at 100 — above that is a 400, not a clamp.
+ */
+export interface EventListFilters {
+  pageNo?: number;
+  pageSize?: number;
+  status?: "UPCOMING" | "HISTORY" | "DRAFT";
+  searchTerm?: string;
+  venueId?: string;
+  startDate?: string;
+}
+
+const eventListQuery = (p: EventListFilters & { eventId?: string; invitationStatus?: string }) => ({
+  pageNo: p.pageNo ? String(p.pageNo) : undefined,
+  pageSize: p.pageSize ? String(p.pageSize) : undefined,
+  status: p.status,
+  searchTerm: p.searchTerm,
+  venueId: p.venueId,
+  startDate: p.startDate,
+  eventId: p.eventId,
+  invitationStatus: p.invitationStatus,
+});
+
+/** The two event types the API accepts as `typeId`. */
+export const EVENT_TYPES = {
+  INVITEONLY: "55b7d47c-9c95-43ce-94ca-f103b819de3a",
+  OPENINVITE: "fbe6aba3-f2d9-4c6c-a358-cab441641b06",
+} as const;
+
+/** Writable event fields shared by create, update and patch. */
+export interface EventWriteFields {
+  title?: string;
+  description?: string;
+  startDate?: string;
+  endDate?: string;
+  doorOpenDate?: string;
+  eventTimeZone?: string;
+  parentEventId?: string;
+  typeId?: string;
+  maximumGuests?: number;
+  additionalGuestLimit?: number;
+  phoneToCall?: string;
+  phoneToText?: string;
+  contactEmail?: string;
+  hostName?: string;
+  details?: string;
+  marketingPageLink?: string;
+  isRegQuestionEnable?: boolean;
+  isVenueHidden?: boolean;
+  ticketCurrency?: string;
+  widgetRedirectUrl?: string;
+}
+
 export interface ClientOptions {
   /** Receives one record per call. Pass `() => {}` to disable. */
   onCall?: (entry: CallLog) => void;
@@ -115,6 +171,14 @@ function callMeta(method: string, args: unknown[]): Record<string, unknown> | un
       return { id: a, fields: Object.keys((b as object) ?? {}) };
     case "deleteGuest":
       return { id: a, invitationId: b };
+    // `notify` fans out to every guest of the event, so it is what to trace.
+    case "updateEvent":
+    case "patchEvent":
+      return { id: a, fields: Object.keys((b as object) ?? {}), notify: !!b?.notify };
+    case "updateEventDetails":
+      return { id: a, notify: !!b?.notify, detailsChars: b?.details?.length ?? 0 };
+    case "publishEvent":
+      return { id: a };
     // Field *names* only — the values are guest PII.
     case "patchGuest":
     case "updateGuest":
@@ -379,6 +443,99 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
       return request("GET", `/api/portal/event/${id}`);
     },
 
+    // Event writes. All scoped to the key's organization — another org's event
+    // is a 404, the same as one that does not exist. Dates are local times in
+    // the event's `eventTimeZone`, not UTC. `notify: true` on update, patch
+    // and details sends every guest of the event an update notification.
+
+    /** Created as a draft; `publishEvent` makes it live. `typeId` defaults to invite-only. */
+    createEvent(params: EventWriteFields & { title: string; startDate: string }) {
+      return request("POST", "/api/portal/event", params);
+    },
+
+    /**
+     * Not a text-preserving replace: text fields left out keep their value,
+     * but every other field — dates, numbers, booleans, `parentEventId` — is
+     * cleared when omitted, and `ticketCurrency` resets to USD. Prefer
+     * `patchEvent` unless the caller has the whole current record in hand.
+     */
+    updateEvent(id: string, params: EventWriteFields & { title: string; startDate: string; typeId: string; notify?: boolean }) {
+      return request("PUT", `/api/portal/event/${id}`, params);
+    },
+
+    /**
+     * JSON Merge Patch, as `patchGuest`: omitted fields are untouched, `null`
+     * clears a clearable one. `title`, `startDate`, `typeId`, `ticketCurrency`,
+     * `isRegQuestionEnable` and `isVenueHidden` reject `null` outright. An
+     * empty body is a 400 `NO_FIELDS_TO_UPDATE`. Does not publish.
+     */
+    patchEvent(id: string, params: { [K in keyof EventWriteFields]?: EventWriteFields[K] | null } & { title?: string; startDate?: string; notify?: boolean }) {
+      return request("PATCH", `/api/portal/event/${id}`, params);
+    },
+
+    /** Replaces only `details` (HTML); `null` clears it. */
+    updateEventDetails(id: string, params: { details: string | null; notify?: boolean }) {
+      return request("POST", `/api/portal/event/${id}/details`, params);
+    },
+
+    /** Type and guest limits only. A limit left out is cleared to "no limit", not kept. */
+    updateEventInvitee(id: string, params: { typeId: string; maximumGuests?: number | null; additionalGuestLimit?: number | null }) {
+      return request("POST", `/api/portal/event/${id}/invitee`, params);
+    },
+
+    /** Returns `true`. Re-publishing an already-published event is allowed. */
+    publishEvent(id: string) {
+      return request("POST", `/api/portal/event/${id}/publish`);
+    },
+
+    // The Global API's event and invitation lists. All org-scoped by the key,
+    // and all return `{ data, pagination }`. The per-person reads match a guest
+    // or contact to guest records *across* the org's events by phone (exact)
+    // or email (case-insensitive) — the same person on three events is three
+    // guest records. An unknown or other-org guest/contact is a 404.
+
+    /** Active, top-level events — drafts included unless `status` says otherwise. */
+    listEvents(params: EventListFilters) {
+      return request("GET", "/api/portal/event/list", undefined, eventListQuery(params));
+    },
+
+    listEventsByContact(contactId: string, params: EventListFilters) {
+      return request("GET", `/api/portal/event/list/contact/${contactId}`, undefined, eventListQuery(params));
+    },
+
+    listEventsByGuest(guestId: string, params: EventListFilters) {
+      return request("GET", `/api/portal/event/list/guest/${guestId}`, undefined, eventListQuery(params));
+    },
+
+    /**
+     * One row per guest record, each with its invitations (newest first) and
+     * its event. A guest added without an invitation still appears, with an
+     * empty `invitations`. Pages count guest records, not invitations.
+     */
+    listGuestRecordsByContact(contactId: string, params: EventListFilters & { eventId?: string }) {
+      return request(
+        "GET",
+        `/api/portal/event/list/contact/${contactId}/guests`,
+        undefined,
+        eventListQuery(params)
+      );
+    },
+
+    /** `invitationStatus` is case-insensitive; an unknown one is a 400. */
+    listInvitationsByContact(
+      contactId: string,
+      params: EventListFilters & { eventId?: string; invitationStatus?: string }
+    ) {
+      return request("GET", `/api/portal/invitation/list/contact/${contactId}`, undefined, eventListQuery(params));
+    },
+
+    listInvitationsByGuest(
+      guestId: string,
+      params: EventListFilters & { eventId?: string; invitationStatus?: string }
+    ) {
+      return request("GET", `/api/portal/invitation/list/guest/${guestId}`, undefined, eventListQuery(params));
+    },
+
     // ── Guests ──
     //
     // `customFields` on create/update/patch is an object keyed by custom field
@@ -397,7 +554,14 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
       return request("GET", `/api/portal/guest/${id}`, undefined, { invitationId });
     },
 
-    /** Every currently-ACTIVE mandatory GUEST custom field must be in `customFields`. */
+    /**
+     * Every currently-ACTIVE mandatory GUEST custom field must be in `customFields`.
+     *
+     * `invitation.designMappingId` is optional: left out, the event's design is
+     * used, or none when the event has no design — which is every event made
+     * through `createEvent`, so `invitation: {}` is the only way to invite a
+     * guest to one.
+     */
     createGuest(params: {
       eventId: string;
       firstName: string;
@@ -410,7 +574,7 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
       techaeonCode?: string;
       guestCode?: string;
       invitation?: {
-        designMappingId: string;
+        designMappingId?: string;
         guestPasses?: number;
         isUnlimited?: boolean;
       };
@@ -527,6 +691,14 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
     // ── Contacts ──
     // organizationId is resolved server-side from the API key on every
     // endpoint below — it is not a request parameter.
+    //
+    // `customFields` follows the guest rules — keyed by CONTACT definition id,
+    // merged by key on update, `null` clears one, omitting it leaves all alone —
+    // but these endpoints are multipart, so it travels as one JSON-encoded form
+    // field. Keying by `fieldKey` fails with the misleading "CustomFields must
+    // be a valid JSON object". Values read back on `getContact` and on the
+    // create/update response; `listContacts` returns `customFields: null`, and
+    // `uploadContacts` ignores the field entirely.
 
     createContact(params: {
       firstName: string;
@@ -540,8 +712,13 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
       country?: string;
       zip?: string;
       socialHandle?: string;
+      customFields?: Record<string, unknown>;
     }) {
-      return formRequest("POST", "/api/portal/contact", params);
+      const { customFields, ...fields } = params;
+      return formRequest("POST", "/api/portal/contact", {
+        ...fields,
+        customFields: customFields && JSON.stringify(customFields),
+      });
     },
 
     getContact(id: string) {
@@ -563,9 +740,14 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
         country?: string;
         zip?: string;
         socialHandle?: string;
+        customFields?: Record<string, unknown>;
       }
     ) {
-      return formRequest("PUT", `/api/portal/contact/${id}`, params);
+      const { customFields, ...fields } = params;
+      return formRequest("PUT", `/api/portal/contact/${id}`, {
+        ...fields,
+        customFields: customFields && JSON.stringify(customFields),
+      });
     },
 
     deleteContact(id: string) {
@@ -825,7 +1007,8 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
     // The Global API's `/api/portal/custom-fields` surface: per-organization
     // field definitions for a record type (`GUEST`, `CONTACT`, `EVENT`,
     // `ORGANIZATION`, `TECHAEON`). Values live on the record itself — today
-    // that is the guest endpoints' `customFields`, keyed by definition id.
+    // that is the guest and contact endpoints' `customFields`, keyed by
+    // definition id.
     //
     // `DRAFT` is the status that matters: while a field holds it, any shape
     // change is allowed. Past it, changing `dataType` or `cardinality`, turning
@@ -952,7 +1135,7 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
     },
   };
 
-  // Wrap every method once rather than at 44 call sites. Failures are recorded
+  // Wrap every method once rather than at 56 call sites. Failures are recorded
   // and rethrown — logging must never change behaviour.
   const instrumented = Object.fromEntries(
     Object.entries(methods).map(([name, fn]) => [

@@ -1,7 +1,7 @@
 # CLAUDE.md — aeonpass-mcp
 
 ## What this is
-MCP server for the Aeon Pass platform API. Exposes techaeons, events and guests, contacts, chat, and custom field definitions as MCP tools so Claude Code can query and manage them directly.
+MCP server for the Aeon Pass platform API. Exposes techaeons, events and guests, event/invitation lookups by person, contacts, chat, and custom field definitions as MCP tools so Claude Code can query and manage them directly.
 
 Deployed at **https://mcp.aeonpass.com/mcp** (Vercel, fronted by Cloudflare DNS
 in DNS-only mode — the proxy would buffer this transport's SSE stream). Callers
@@ -20,7 +20,7 @@ parameter, not a module-level env read, so each transport decides where it
 comes from.
 
 ```
-src/api.ts     createClient(apiKey) → all 44 API calls bound to that key
+src/api.ts     createClient(apiKey) → all 56 API calls bound to that key
 src/realtime.ts SignalR chat subscriptions, keyed by sha256(apiKey) + scope
 src/server.ts  createServer(client, opts) → registers the tools
 src/app.ts     Hono app; reads X-API-KEY per request
@@ -45,7 +45,7 @@ report a dead connection.
 
 ## Logging
 
-`createClient` wraps all 44 methods and emits one JSON line per call to
+`createClient` wraps all 56 methods and emits one JSON line per call to
 **stderr** — stdout belongs to the stdio transport's JSON-RPC frames, so writing
 there corrupts the protocol.
 
@@ -107,6 +107,12 @@ All tools call the Aeon Pass gateway at `https://apv2-gatewayapp-prod-westus3.az
 | Tool | Description |
 |------|-------------|
 | `get_event` | Get event details by ID |
+| `create_event` | Create an event (starts as a draft) |
+| `update_event` | Full update — omitted non-text fields are CLEARED |
+| `patch_event` | Partial update — only the fields you pass |
+| `update_event_details` | Replace the HTML details only |
+| `update_event_invitee` | Set type + guest limits only (omitted limit = cleared) |
+| `publish_event` | Draft → Published |
 | `list_guests` | List/search guests for an event (paginated) |
 | `get_guest` | Get one guest, including custom field values |
 | `create_guest` | Add a guest to an event, optionally issue invitation |
@@ -116,6 +122,71 @@ All tools call the Aeon Pass gateway at `https://apv2-gatewayapp-prod-westus3.az
 | `send_invite` | Send/resend invitations to guests (sets status to SENT) |
 | `send_message_to_guests` | Message guests via InApp/SMS/Email |
 | `list_guest_groups` | List valid guest group IDs for an organization |
+
+Event writes (dev only, 21 Oct 2026). Easy to get wrong:
+
+- **PUT is not a plain replace.** Text fields left out (or `null`) keep their
+  value; dates, numbers, booleans and `parentEventId` left out are *cleared*,
+  and `ticketCurrency` resets to `USD`. Verified on dev — except
+  `widgetRedirectUrl`, a text field that PUT clears anyway. Prefer `patch_event`.
+- `update_event_invitee` writes both limits as sent, so a limit left out is
+  cleared to "no limit". `typeId` is required there and on PUT.
+- `patch_event` follows `patch_guest` — plain values, `null` clears, and
+  `title`/`startDate`/`typeId`/`ticketCurrency`/`isRegQuestionEnable`/
+  `isVenueHidden` reject `null`. An empty body is `400 NO_FIELDS_TO_UPDATE`.
+- `notify: true` on update/patch/details notifies **every guest** of the event.
+  `callMeta` logs the flag; tool descriptions say to leave it unset.
+- Dates are **local** to `eventTimeZone`, never UTC.
+- **An API-created event has no design mapping** (`designMappingId: null`) and
+  no endpoint sets one. Since 21 Oct (evening) `create_guest`'s `invitation.designMappingId`
+  is optional — left out, the event's design is used, or none — so the tool's
+  `invite: true` issues an invitation on such an event, and that guest then
+  appears in the per-person lists. Adding an invitation to an *existing*
+  guest via `patch_guest` still requires `designMappingId`
+  (`400 DESIGN_MAPPING_ID_REQUIRED`), so on a design-less event that is
+  impossible. Uninvited guests are listed too (since 22 Oct).
+- **Validation, fixed on dev 21 Oct (evening)** for create, PUT, PATCH and invitee:
+  unknown `typeId` → 404 (was 204, and on invitee it corrupted the event);
+  negative limits, `endDate` before `startDate`, parent loops (self, child,
+  grandchild) and unknown properties → 400, with nothing written. PATCH checks
+  date order against the merged record. **Not validated, by design** (the
+  backend keeps business rules minimal): `eventTimeZone` is stored as sent,
+  `details` HTML is stored unsanitized, and `doorOpenDate` is not checked
+  against `endDate`. Do not report these as bugs. Event `6873105f…` from the
+  old invitee bug still 404s and needs a DB repair.
+- Event writes reach `list_events` after **~2–60 s** (guests ~1 s); a
+  sub-event never appears there.
+
+**Events & invitations by person** (Global API, dev only — see rollout table)
+| Tool | Description |
+|------|-------------|
+| `list_events` | List the org's events (paginated, status/search/venue/date filters) |
+| `list_contact_events` | Events a contact is a guest of |
+| `list_guest_events` | Events the person behind a guest is invited to |
+| `list_contact_guests` | A contact's guest records, each with invitations + event |
+| `list_contact_invitations` | A contact's invitations, each with guest + event |
+| `list_guest_invitations` | Invitations held by the person behind a guest |
+
+All six share one filter set — `status` (`UPCOMING`/`HISTORY`/`DRAFT`, sent by
+name; the API also takes `1`–`3`), `searchTerm`, `venueId`, `startDate` (a
+24-hour window from that value, in the event's local time) — plus `pageNo` and
+`pageSize`, which is capped at **100 and rejected above it** rather than
+clamped. The invitation lists add `invitationStatus` (case-insensitive) and
+`eventId`; `list_contact_guests` adds `eventId`. Sub-events and deleted events
+never appear; drafts do unless `status` excludes them.
+
+The per-person reads do **not** stay on the guest's own event. A guest or
+contact is matched to guest records across all of the org's events by phone
+(exact) or email (case-insensitive), the rule the app uses to link a contact
+to their events — so `list_guest_events` for a guest of event A also returns
+event B if the same email is a guest there. An unknown or other-org guest or
+contact is a **404**, unlike `list_conversations`' empty page.
+
+Uninvited guests are listed since ~09:50 UTC 22 Oct (with `invitations: []`),
+but only guests created after that — earlier uninvited guests on dev were not
+backfilled and still 404. One open bug: **events with the same `startDate` sort
+unstably**, so paging through them returns some twice and skips others — there
+is no tie-breaker. Page with a size that holds the whole list until fixed.
 
 **Custom fields**
 | Tool | Description |
@@ -132,8 +203,9 @@ All tools call the Aeon Pass gateway at `https://apv2-gatewayapp-prod-westus3.az
 
 Custom fields come from the **Global** API (`specs/global.json`), live on every
 environment. Definitions live there; *values* are written on the record itself —
-today only guests, as `customFields` on `create_guest` / `update_guest` /
-`patch_guest`, read back by `get_guest` (`list_guests` does not carry them).
+guests, as `customFields` on `create_guest` / `update_guest` /
+`patch_guest`, read back by `get_guest` (`list_guests` does not carry them); and
+contacts, on `create_contact` / `update_contact`, read back by `get_contact`.
 Three things that are easy to get wrong:
 
 - `customFields` is keyed by the definition's **`id`**, not its `fieldKey`.
@@ -161,6 +233,16 @@ types are the C# wrapper leaking into the schema.
 | `delete_contact` | Soft-delete a contact |
 | `send_message_to_contacts` | Message contacts via InApp/SMS/Email |
 | `upload_contacts` | Bulk upsert contacts from a list — all-or-nothing |
+
+Contact `customFields` (dev and stage, Oct 2026) follow the guest rules — keyed by
+definition `id`, merged by key on PUT, `null` clears one — but contact
+create/update are **multipart**, so `createClient` sends the object as one
+JSON-encoded form field (the spec types it `string`, undocumented). Keyed by
+`fieldKey` it fails with the misleading `CustomFields must be a valid JSON
+object`. `list_contacts` always returns `customFields: null`, and
+`upload_contacts` silently ignores the field. A field just set `ACTIVE` can be
+refused as `CUSTOM_FIELD_VALUE_INVALID` "not a recognized custom field" for a
+few seconds — a cache, not a bad id. All verified on dev 21 Oct 2026.
 
 `upload_contacts` became **atomic** in Oct 2026 (dev and stage; not prod yet): if any row fails
 validation, no contacts are saved, and the failures come back in `errorItems`
@@ -374,9 +456,10 @@ stage while the published spec still described the old optional field. So the
 drift check passing does not mean there is nothing to pick up; check the
 environment's own swagger when chasing a specific change.
 
-> **`specs/message.json` and `specs/organization.json` are gateway snapshots,
-> not published ones.** Both were regenerated from the **dev** swagger in Oct
-> 2026 — filtered to `/api/portal` and the schemas those paths reach, which is
+> **`specs/message.json`, `specs/organization.json`, `specs/global.json` and
+> `specs/event.json` are gateway snapshots, not published ones.** All were
+> regenerated from the **dev** swagger in Oct 2026 (global, organization and
+> event on 21 Oct) — filtered to `/api/portal` and the schemas those paths reach, which is
 > the same shape the publisher serves, with `servers[0].url` rewritten to prod
 > and `example` blocks stripped the way `check:api` stores every other snapshot.
 >
@@ -388,13 +471,17 @@ environment's own swagger when chasing a specific change.
 >   `senderApiKeyName`, and the per-key read state in the `mark-read` and
 >   `send-message` descriptions.
 > - **organization** — the five new `upload-list` row fields and its
->   all-or-nothing behavior.
+>   all-or-nothing behavior, and contact `customFields`.
+> - **event** — the six event write operations (`- event: GONE …`).
+> - **global** — the six event/invitation list operations. Because the
+>   snapshot has them and the publisher does not, `check:api` prints them as
+>   `- global: GONE …`; that is the publisher lagging, not a removal.
 >
-> Those are why `check:api` reports `~ message:` and `~ organization: same
-> operations, but the spec body changed`. **Do not clear those lines with
+> Those are why `check:api` reports `~ message:`, `~ organization: same
+> operations, but the spec body changed`, and the six `- global: GONE` lines. **Do not clear those lines with
 > `check:api -- --write`** — `--write` rewrites *every* snapshot from the
-> published source, so it would revert both to the older contract. To refresh
-> techaeon, event or global, run `--write` and then `git checkout` the two
+> published source, so it would revert all four to the older contract. To refresh
+> techaeon, run `--write` and then `git checkout` the four
 > gateway snapshots back. Once the publisher catches up, `--write` is safe again
 > and the lines go away on their own.
 >
@@ -406,6 +493,9 @@ environment's own swagger when chasing a specific change.
 > | Custom fields API, `GET /guest/{id}`, guest `customFields` | ✓ | ✓ | ✓ |
 > | `upload-list` new row fields + all-or-nothing | ✓ | ✓ | — |
 > | API-key identity (`senderType`, per-key read state) | ✓ | — | — |
+> | Contact `customFields` (checked 21 Oct) | ✓ | ✓ | — |
+> | Event/invitation lists by person (checked 21 Oct) | ✓ | — | — |
+> | Event create/update/patch/details/invitee/publish (21 Oct) | ✓ | — | — |
 >
 > Pointed at prod, the new upload fields would be ignored and the chat tool
 > descriptions would overstate what prod does. Re-check before switching.

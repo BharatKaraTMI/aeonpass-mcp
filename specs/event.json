@@ -11,6 +11,46 @@
     }
   ],
   "paths": {
+    "/api/portal/event": {
+      "post": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Create a new event.",
+        "description": "Creates a new event in the API key's organization. The event is created as a **draft** — publish it with\n`POST /portal/event/{Id}/publish`.\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Behavior:**\n- `Title` (up to 200 characters) and `StartDate` are required.\n- `TypeId` is optional and defaults to **Invite only**.\n- `ParentEventId` is optional and makes the new event a sub-event.\n- The response is the created event; save its `Id` to update or publish it later.\n\n**Validation** (nothing is written when a rule fails):\n- A property the request does not define → `400`.\n- `TypeId` that is not one of the event types below → `404`.\n- A negative `MaximumGuests` or `AdditionalGuestLimit` → `400`.\n- `EndDate` before `StartDate` → `400`.\n- `ParentEventId` that is the event itself or one of its sub-events → `400`; an event of another organization → `404`.\n\n**Event types (`TypeId`):**\n| `TypeId` | Type |\n|----------|------|\n| `55b7d47c-9c95-43ce-94ca-f103b819de3a` | Invite only (`INVITEONLY`) |\n| `fbe6aba3-f2d9-4c6c-a358-cab441641b06` | Open invite (`OPENINVITE`) |\n\n**Dates:** `StartDate`, `EndDate` and `DoorOpenDate` are local times in the event's `EventTimeZone`\n(an IANA name such as `America/Los_Angeles`).\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
+        "operationId": "AeonPassEventAPIEndPointsEventsPortalPortalCreateEventEndPoint",
+        "requestBody": {
+          "x-name": "PortalCreateEventEndPointRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalCreateEventEndPointRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "The created draft event.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalCreateEventEndPointResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
     "/api/portal/event/{id}": {
       "get": {
         "tags": [
@@ -47,6 +87,248 @@
             "X-API-KEY": []
           }
         ]
+      },
+      "patch": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Partially update an event — only the fields you send are touched.",
+        "description": "Updates only the fields present in the request body. This is a true partial update (JSON Merge Patch\nsemantics), unlike `PUT /portal/event/{Id}` which replaces the whole record.\n\n**Every field is a plain value in the JSON — never a `{ \"isSet\": ..., \"value\": ... }` wrapper.** That shape\nonly exists internally to tell \"omitted\" apart from \"sent as null\"; sending it literally as JSON will fail to\ndeserialize. For example, to rename an event and touch nothing else:\n```json\n{\n  \"title\": \"Annual Tech Conference 2026\"\n}\n```\n\n- **Omit a field** to leave it completely unchanged.\n- **Send a field with a value** to set/replace it.\n- **Send a field as explicit `null`** to clear it, where the event allows it (e.g. `description`, `endDate`,\n  `doorOpenDate`, `maximumGuests`, `parentEventId`, `hostName`). Fields an event can never be without —\n  `title`, `startDate`, `typeId`, `ticketCurrency`, `isRegQuestionEnable`, `isVenueHidden` — reject an\n  explicit `null` with a validation error instead of silently ignoring it.\n- At least one field must be sent, otherwise `400` (`NO_FIELDS_TO_UPDATE`).\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- `title` is limited to 200 characters.\n- The **Validation** rules below apply to the fields you send; `endDate` before `startDate` is checked against the\n  event as it will be stored, so sending only one of them is compared with the other's current value.\n- The event's status, ticketing and email-notification settings are not changed here — use\n  `POST /portal/event/{Id}/publish` to publish.\n- When the event is published, ticketed and its `title` or `description` changes, the ticketing store is\n  updated too.\n- The response is the whole event after the update.\n\n**`Notify`:** when `true`, the event's guests are sent an update notification about the change. The host name on\nthe notification is the organization owner's.\n\n**Validation** (nothing is written when a rule fails):\n- A property the request does not define → `400`.\n- `TypeId` that is not one of the event types below → `404`.\n- A negative `MaximumGuests` or `AdditionalGuestLimit` → `400`.\n- `EndDate` before `StartDate` → `400`.\n- `ParentEventId` that is the event itself or one of its sub-events → `400`; an event of another organization → `404`.\n\n**Event types (`TypeId`):**\n| `TypeId` | Type |\n|----------|------|\n| `55b7d47c-9c95-43ce-94ca-f103b819de3a` | Invite only (`INVITEONLY`) |\n| `fbe6aba3-f2d9-4c6c-a358-cab441641b06` | Open invite (`OPENINVITE`) |\n\n**Dates:** `StartDate`, `EndDate` and `DoorOpenDate` are local times in the event's `EventTimeZone`\n(an IANA name such as `America/Los_Angeles`).\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
+        "operationId": "AeonPassEventAPIEndPointsEventsPortalPortalPatchEventEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The ID of the event to update (route).",
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "PortalPatchEventEndPointRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalPatchEventEndPointRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "The event after the update.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalPatchEventEndPointResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Update an event.",
+        "description": "Updates an event of the API key's organization.\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- `Title` (up to 200 characters), `StartDate` and `TypeId` are required.\n- Text fields sent as `null` (or left out) keep their current value. All other fields — dates, numbers,\n  booleans and `ParentEventId` — are always replaced, so leaving one out clears it. Send the current values\n  (from `GET /portal/event/{Id}`) for anything you do not want to change. `TicketCurrency` is reset to `USD`\n  when left out.\n- When the event is published, ticketed and its `Title` or `Description` changes, the ticketing store is\n  updated too.\n\n**`Notify`:** when `true`, the event's guests are sent an update notification about the change. The host name on\nthe notification is the organization owner's.\n\n**Validation** (nothing is written when a rule fails):\n- A property the request does not define → `400`.\n- `TypeId` that is not one of the event types below → `404`.\n- A negative `MaximumGuests` or `AdditionalGuestLimit` → `400`.\n- `EndDate` before `StartDate` → `400`.\n- `ParentEventId` that is the event itself or one of its sub-events → `400`; an event of another organization → `404`.\n\n**Event types (`TypeId`):**\n| `TypeId` | Type |\n|----------|------|\n| `55b7d47c-9c95-43ce-94ca-f103b819de3a` | Invite only (`INVITEONLY`) |\n| `fbe6aba3-f2d9-4c6c-a358-cab441641b06` | Open invite (`OPENINVITE`) |\n\n**Dates:** `StartDate`, `EndDate` and `DoorOpenDate` are local times in the event's `EventTimeZone`\n(an IANA name such as `America/Los_Angeles`).\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
+        "operationId": "AeonPassEventAPIEndPointsEventsPortalPortalUpdateEventEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The ID of the event to update (route).",
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "PortalUpdateEventEndPointRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalUpdateEventEndPointRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "The updated event.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalUpdateEventEndPointResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/event/{id}/details": {
+      "post": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Update an event's details content.",
+        "description": "Replaces the `Details` content of an event of the API key's organization. Nothing else on the event changes.\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- `Details` is written as sent; `null` clears it.\n- A property the request does not define → `400`.\n\n**`Notify`:** when `true`, the event's guests are sent an update notification about the change. The host name on\nthe notification is the organization owner's.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
+        "operationId": "AeonPassEventAPIEndPointsEventsPortalPortalUpdateEventDetailsEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The ID of the event to update (route).",
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "PortalUpdateEventDetailsEndPointRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalUpdateEventDetailsEndPointRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "The event id and its new details content.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalUpdateEventDetailsEndPointResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/event/{id}/invitee": {
+      "post": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Update an event's invitee settings.",
+        "description": "Updates the invitee settings of an event of the API key's organization: its type, guest limit and the number\nof additional guests each guest may bring. Nothing else on the event changes.\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- `TypeId` is required.\n- `MaximumGuests` and `AdditionalGuestLimit` are written as sent; leaving one out clears it (no limit).\n- A property the request does not define → `400`; an unknown `TypeId` → `404`; a negative limit → `400`.\n  Nothing is written when a rule fails.\n\n**Event types (`TypeId`):**\n| `TypeId` | Type |\n|----------|------|\n| `55b7d47c-9c95-43ce-94ca-f103b819de3a` | Invite only (`INVITEONLY`) |\n| `fbe6aba3-f2d9-4c6c-a358-cab441641b06` | Open invite (`OPENINVITE`) |\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
+        "operationId": "AeonPassEventAPIEndPointsEventsPortalPortalUpdateEventInviteeEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The ID of the event to update (route).",
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "PortalUpdateEventInviteeEndPointRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalUpdateEventInviteeEndPointRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "The updated event.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalUpdateEventInviteeEndPointResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/event/{id}/publish": {
+      "post": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Publish an event.",
+        "description": "Publishes an event of the API key's organization. The event id is in the route; no request body is needed\n(an empty body or `{}` is accepted too).\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- Sets the event's status to **Published**.\n- For a ticketed event, its ticket groups and tiers are sent to the ticketing store (again, if the event was\n  already published).\n- Returns `true` when the event was published.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
+        "operationId": "AeonPassEventAPIEndPointsEventsPortalPortalPublishEventEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The ID of the event to publish.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "`true` when the event was published.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
       }
     },
     "/api/portal/guest": {
@@ -55,7 +337,7 @@
           "Portal"
         ],
         "summary": "Create a new guest.",
-        "description": "Creates a new guest for an event and, optionally, issues them an invitation.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `FirstName` is required, and at least one of `Phone` or `Email` must be provided.\n- `GroupId` is required. Valid guest group IDs can be retrieved via `GET /portal/guest-group/{OrganizationId}/list`.\n- Rejects the request if a guest with the same `Phone` or `Email` already exists in the event.\n- If `GuestCode` is provided, it must not already be used by any guest in any event.\n- If `TechaeonCode` is provided, it is validated against the event and the guest is linked to that Techaeon.\n- If `Invitation` is provided, an invitation is created with status **CREATED** (or **PURCHASED** if `IsExternalTicket` is set), and a QR code is generated for it. The response's `Invitation.Id` is the invitation's own identifier — save it if you plan to reference the invitation directly later, though `PUT /portal/guest/{Id}` no longer requires it (it resolves the guest's current invitation automatically).\n- If the guest's `Phone`/`Email` matches an existing platform user account, the guest is automatically linked to that user.\n- If `IsExternalTicket` is set, the `ExternalTicket` details are used to create an associated external ticket order.\n- `CustomFields` is optional, keyed by custom field definition id (see AeonPassGlobal's `GET /portal/custom-fields?entityType=GUEST`). Every currently-`ACTIVE` mandatory field must be included. Omit `CustomFields` entirely to skip custom fields altogether.\n\n**Valid Invitation Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Invitation created but not yet sent. |\n| `SENT` | Invitation has been sent to the guest. |\n| `VIEWED` | Guest has viewed the invitation. |\n| `ACCEPTED` | Guest has accepted the invitation. |\n| `DECLINED` | Guest has declined the invitation. |\n| `VOIDED` | Invitation has been voided. |\n| `EXPIRED` | Invitation has expired. |\n| `ADMITTED` | Guest has been admitted to the event. |\n| `CANCELLED` | Invitation has been cancelled. |\n| `PURCHASED` | Invitation is linked to a purchased/external ticket. |",
+        "description": "Creates a new guest for an event and, optionally, issues them an invitation.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `FirstName` is required, and at least one of `Phone` or `Email` must be provided.\n- `GroupId` is required. Valid guest group IDs can be retrieved via `GET /portal/guest-group/{OrganizationId}/list`.\n- Rejects the request if a guest with the same `Phone` or `Email` already exists in the event.\n- If `GuestCode` is provided, it must not already be used by any guest in any event.\n- If `TechaeonCode` is provided, it is validated against the event and the guest is linked to that Techaeon.\n- If `Invitation` is provided, an invitation is created with status **CREATED** (or **PURCHASED** if `IsExternalTicket` is set), and a QR code is generated for it. `Invitation.DesignMappingId` is optional: left out, the event's design is used, or none when the event has no design yet. The response's `Invitation.Id` is the invitation's own identifier — save it if you plan to reference the invitation directly later, though `PUT /portal/guest/{Id}` no longer requires it (it resolves the guest's current invitation automatically).\n- If the guest's `Phone`/`Email` matches an existing platform user account, the guest is automatically linked to that user.\n- If `IsExternalTicket` is set, the `ExternalTicket` details are used to create an associated external ticket order.\n- `CustomFields` is optional, keyed by custom field definition id (see AeonPassGlobal's `GET /portal/custom-fields?entityType=GUEST`). Every currently-`ACTIVE` mandatory field must be included. Omit `CustomFields` entirely to skip custom fields altogether.\n\n**Valid Invitation Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Invitation created but not yet sent. |\n| `SENT` | Invitation has been sent to the guest. |\n| `VIEWED` | Guest has viewed the invitation. |\n| `ACCEPTED` | Guest has accepted the invitation. |\n| `DECLINED` | Guest has declined the invitation. |\n| `VOIDED` | Invitation has been voided. |\n| `EXPIRED` | Invitation has expired. |\n| `ADMITTED` | Guest has been admitted to the event. |\n| `CANCELLED` | Invitation has been cancelled. |\n| `PURCHASED` | Invitation is linked to a purchased/external ticket. |",
         "operationId": "AeonPassEventAPIEndPointsGuestsPortalPortalCreateGuestEndPoint",
         "requestBody": {
           "x-name": "PortalCreateGuestEndPointRequest",
@@ -416,7 +698,33 @@
   },
   "components": {
     "schemas": {
-      "PortalGetEventEndPointResponse": {
+      "OrderAttachmentDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "fileName": {
+            "type": "string",
+            "nullable": true
+          },
+          "fileType": {
+            "type": "string",
+            "nullable": true
+          },
+          "url": {
+            "type": "string"
+          },
+          "storageFileName": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "TechaeonMappingDto": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
@@ -424,118 +732,369 @@
             "type": "string",
             "format": "guid"
           },
-          "title": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string",
-            "nullable": true
-          },
-          "startDate": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "endDate": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "parentEventId": {
-            "type": "string",
-            "format": "guid",
-            "nullable": true
-          },
-          "statusId": {
-            "type": "string",
-            "format": "guid",
-            "nullable": true
-          },
-          "statusName": {
-            "type": "string",
-            "nullable": true
-          },
-          "typeId": {
+          "guestId": {
             "type": "string",
             "format": "guid"
           },
-          "typeName": {
+          "invitationId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "techaeonId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "privilegeCode": {
+            "type": "string"
+          },
+          "techaeonPrivilegeId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "resourceType": {
+            "type": "string"
+          },
+          "resourceValue": {
+            "type": "string"
+          },
+          "techaeonCode": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "GuestSource": {
+        "type": "integer",
+        "description": "",
+        "x-enumNames": [
+          "None",
+          "TechaeonId",
+          "TechaeonCode"
+        ],
+        "enum": [
+          0,
+          1,
+          2
+        ]
+      },
+      "ExternalTicketDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "ticketVendor": {
+            "type": "string"
+          },
+          "ticketId": {
             "type": "string",
             "nullable": true
           },
-          "typeCode": {
-            "type": "string",
-            "nullable": true
+          "ticketGroup": {
+            "type": "string"
           },
-          "maximumGuests": {
+          "ticketTier": {
+            "type": "string"
+          },
+          "totalTickets": {
             "type": "integer",
-            "format": "int32",
-            "nullable": true
+            "format": "int32"
           },
-          "phoneToCall": {
+          "ticketPrice": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "promoCode": {
             "type": "string",
             "nullable": true
           },
-          "phoneToText": {
-            "type": "string",
-            "nullable": true
+          "currency": {
+            "type": "string"
           },
-          "contactEmail": {
-            "type": "string",
-            "nullable": true
+          "orderId": {
+            "type": "string"
           },
-          "additionalGuestLimit": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "details": {
-            "type": "string",
-            "nullable": true
-          },
-          "doorOpenDate": {
+          "orderDate": {
             "type": "string",
             "format": "date-time",
             "nullable": true
           },
-          "hostName": {
+          "orderAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "note": {
             "type": "string",
             "nullable": true
           },
-          "venueId": {
+          "orderAttachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderAttachmentDto"
+            }
+          }
+        }
+      },
+      "InvitationDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
             "type": "string",
-            "format": "guid",
-            "nullable": true
+            "format": "guid"
+          },
+          "guestId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "guid"
           },
           "designMappingId": {
             "type": "string",
             "format": "guid",
             "nullable": true
           },
-          "designId": {
+          "guestPasses": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "isUnlimited": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "intendedCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "admittedCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "statusId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "statusName": {
+            "type": "string",
+            "nullable": true
+          },
+          "statusCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "isConfirmed": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "qrCodeUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "tierId": {
             "type": "string",
             "format": "guid",
             "nullable": true
           },
-          "isTicketingEnabled": {
+          "purchasedQuantity": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "isTicketed": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "isExternalTicket": {
             "type": "boolean"
           },
-          "eventTimeZone": {
+          "techaeons": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/TechaeonMappingDto"
+            }
+          }
+        }
+      },
+      "GuestCustomFieldValueDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "fieldKey": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "dataType": {
+            "type": "string"
+          },
+          "value": {
+            "nullable": true
+          }
+        }
+      },
+      "EventGuestOrderAttchmentDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fileName": {
             "type": "string",
             "nullable": true
           },
-          "isRegQuestionEnable": {
-            "type": "boolean"
-          },
-          "isVenueHidden": {
-            "type": "boolean"
-          },
-          "ticketCurrency": {
+          "url": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "EventGuestOrderDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "orderNo": {
             "type": "string",
             "nullable": true
           },
-          "widgetRedirectUrl": {
+          "orderId": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "CommunicationType": {
+        "type": "integer",
+        "description": "",
+        "x-enumNames": [
+          "InApp",
+          "SMS",
+          "Email"
+        ],
+        "enum": [
+          1,
+          2,
+          3
+        ]
+      },
+      "PortalCreateGuestEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "groupId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "groupName": {
+            "type": "string",
+            "nullable": true
+          },
+          "guestSource": {
+            "$ref": "#/components/schemas/GuestSource"
+          },
+          "guestCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "invitation": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PortalCreateGuestEndPointInvitationResponse"
+              }
+            ]
+          },
+          "customFields": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/GuestCustomFieldValueDto"
+            }
+          }
+        }
+      },
+      "PortalCreateGuestEndPointInvitationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "designMappingId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "guestPasses": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "isUnlimited": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "statusId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "statusName": {
+            "type": "string",
+            "nullable": true
+          },
+          "statusCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "isExternalTicket": {
+            "type": "boolean"
           }
         }
       },
@@ -615,70 +1174,7 @@
           }
         }
       },
-      "PortalCreateGuestEndPointResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "guid"
-          },
-          "eventId": {
-            "type": "string",
-            "format": "guid"
-          },
-          "firstName": {
-            "type": "string"
-          },
-          "lastName": {
-            "type": "string",
-            "nullable": true
-          },
-          "displayName": {
-            "type": "string",
-            "nullable": true
-          },
-          "phone": {
-            "type": "string",
-            "nullable": true
-          },
-          "email": {
-            "type": "string",
-            "nullable": true
-          },
-          "groupId": {
-            "type": "string",
-            "format": "guid"
-          },
-          "groupName": {
-            "type": "string",
-            "nullable": true
-          },
-          "guestSource": {
-            "$ref": "#/components/schemas/GuestSource"
-          },
-          "guestCode": {
-            "type": "string",
-            "nullable": true
-          },
-          "invitation": {
-            "nullable": true,
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/PortalCreateGuestEndPointInvitationResponse"
-              }
-            ]
-          },
-          "customFields": {
-            "type": "array",
-            "nullable": true,
-            "items": {
-              "$ref": "#/components/schemas/GuestCustomFieldValueDto"
-            }
-          }
-        }
-      },
-      "PortalListGuestEndPointRequest": {
+      "PortalCreateGuestEndPointInvitationRequest": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
@@ -687,47 +1183,14 @@
             "format": "guid",
             "nullable": true
           },
-          "pageNo": {
+          "guestPasses": {
             "type": "integer",
             "format": "int32",
             "nullable": true
           },
-          "pageSize": {
-            "type": "integer",
-            "format": "int32",
+          "isUnlimited": {
+            "type": "boolean",
             "nullable": true
-          },
-          "searchTerm": {
-            "type": "string",
-            "nullable": true
-          },
-          "groupId": {
-            "type": "string",
-            "format": "guid",
-            "nullable": true
-          },
-          "sortBy": {
-            "type": "string",
-            "nullable": true
-          },
-          "sortDirection": {
-            "type": "string",
-            "nullable": true
-          }
-        }
-      },
-      "PortalPagedResponseOfPortalGuestDto": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PortalGuestDto"
-            }
-          },
-          "pagination": {
-            "$ref": "#/components/schemas/PortalPagination"
           }
         }
       },
@@ -819,269 +1282,6 @@
           }
         }
       },
-      "PortalPatchGuestEndPointRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "eventId": {
-            "type": "string",
-            "format": "guid"
-          },
-          "isUpdateAllEvent": {
-            "type": "boolean"
-          },
-          "firstName": {
-            "$ref": "#/components/schemas/PatchFieldOfString"
-          },
-          "lastName": {
-            "$ref": "#/components/schemas/PatchFieldOfString"
-          },
-          "displayName": {
-            "$ref": "#/components/schemas/PatchFieldOfString"
-          },
-          "phone": {
-            "$ref": "#/components/schemas/PatchFieldOfString"
-          },
-          "email": {
-            "$ref": "#/components/schemas/PatchFieldOfString"
-          },
-          "groupId": {
-            "$ref": "#/components/schemas/PatchFieldOfNullableOfGuid"
-          },
-          "techaeonCode": {
-            "$ref": "#/components/schemas/PatchFieldOfString"
-          },
-          "guestCode": {
-            "$ref": "#/components/schemas/PatchFieldOfString"
-          },
-          "invitation": {
-            "nullable": true,
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/PortalPatchGuestEndPointInvitationRequest"
-              }
-            ]
-          },
-          "isExternalTicket": {
-            "$ref": "#/components/schemas/PatchFieldOfNullableOfBoolean"
-          },
-          "externalTicket": {
-            "nullable": true,
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ExternalTicketDto"
-              }
-            ]
-          },
-          "customFields": {
-            "type": "object",
-            "nullable": true,
-            "additionalProperties": {}
-          }
-        }
-      },
-      "PortalPatchGuestEndPointResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "guid"
-          },
-          "eventId": {
-            "type": "string",
-            "format": "guid"
-          },
-          "firstName": {
-            "type": "string"
-          },
-          "lastName": {
-            "type": "string",
-            "nullable": true
-          },
-          "displayName": {
-            "type": "string",
-            "nullable": true
-          },
-          "phone": {
-            "type": "string",
-            "nullable": true
-          },
-          "email": {
-            "type": "string",
-            "nullable": true
-          },
-          "groupId": {
-            "type": "string",
-            "format": "guid"
-          },
-          "groupName": {
-            "type": "string",
-            "nullable": true
-          },
-          "guestSource": {
-            "$ref": "#/components/schemas/GuestSource"
-          },
-          "guestCode": {
-            "type": "string",
-            "nullable": true
-          },
-          "invitation": {
-            "nullable": true,
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/PortalPatchGuestEndPointInvitationResponse"
-              }
-            ]
-          },
-          "customFields": {
-            "type": "array",
-            "nullable": true,
-            "items": {
-              "$ref": "#/components/schemas/GuestCustomFieldValueDto"
-            }
-          }
-        }
-      },
-      "PortalUpdateGuestEndPointRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "eventId",
-          "firstName",
-          "groupId"
-        ],
-        "properties": {
-          "eventId": {
-            "type": "string",
-            "format": "guid",
-            "minLength": 1
-          },
-          "firstName": {
-            "type": "string",
-            "minLength": 1
-          },
-          "lastName": {
-            "type": "string",
-            "nullable": true
-          },
-          "displayName": {
-            "type": "string",
-            "nullable": true
-          },
-          "phone": {
-            "type": "string",
-            "nullable": true
-          },
-          "email": {
-            "type": "string",
-            "nullable": true
-          },
-          "groupId": {
-            "type": "string",
-            "format": "guid",
-            "minLength": 1
-          },
-          "isUpdateAllEvent": {
-            "type": "boolean"
-          },
-          "techaeonCode": {
-            "type": "string",
-            "nullable": true
-          },
-          "guestCode": {
-            "type": "string",
-            "nullable": true
-          },
-          "invitation": {
-            "nullable": true,
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/PortalUpdateGuestEndPointInvitationRequest"
-              }
-            ]
-          },
-          "isExternalTicket": {
-            "type": "boolean"
-          },
-          "externalTicket": {
-            "nullable": true,
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ExternalTicketDto"
-              }
-            ]
-          },
-          "customFields": {
-            "type": "object",
-            "nullable": true,
-            "additionalProperties": {}
-          }
-        }
-      },
-      "PortalUpdateGuestEndPointResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "guid"
-          },
-          "eventId": {
-            "type": "string",
-            "format": "guid"
-          },
-          "firstName": {
-            "type": "string"
-          },
-          "lastName": {
-            "type": "string",
-            "nullable": true
-          },
-          "displayName": {
-            "type": "string",
-            "nullable": true
-          },
-          "phone": {
-            "type": "string",
-            "nullable": true
-          },
-          "email": {
-            "type": "string",
-            "nullable": true
-          },
-          "groupId": {
-            "type": "string",
-            "format": "guid"
-          },
-          "groupName": {
-            "type": "string",
-            "nullable": true
-          },
-          "guestSource": {
-            "$ref": "#/components/schemas/GuestSource"
-          },
-          "guestCode": {
-            "type": "string",
-            "nullable": true
-          },
-          "invitation": {
-            "nullable": true,
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/PortalUpdateGuestEndPointInvitationResponse"
-              }
-            ]
-          },
-          "customFields": {
-            "type": "array",
-            "nullable": true,
-            "items": {
-              "$ref": "#/components/schemas/GuestCustomFieldValueDto"
-            }
-          }
-        }
-      },
       "PortalInviteGuestEndPointRequest": {
         "type": "object",
         "additionalProperties": false,
@@ -1111,196 +1311,18 @@
           }
         }
       },
-      "PortalSendMessageToGuestEndPointRequest": {
+      "PortalPagedResponseOfPortalGuestDto": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "eventId"
-        ],
         "properties": {
-          "eventId": {
-            "type": "string",
-            "format": "guid",
-            "minLength": 1
-          },
-          "guestIds": {
+          "data": {
             "type": "array",
             "items": {
-              "type": "string",
-              "format": "guid"
+              "$ref": "#/components/schemas/PortalGuestDto"
             }
           },
-          "messageBody": {
-            "type": "string"
-          },
-          "typeIds": {
-            "type": "array",
-            "nullable": true,
-            "items": {
-              "$ref": "#/components/schemas/CommunicationType"
-            }
-          },
-          "sendToAll": {
-            "type": "boolean",
-            "nullable": true
-          }
-        }
-      },
-      "PortalCreateGuestEndPointInvitationRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "designMappingId"
-        ],
-        "properties": {
-          "designMappingId": {
-            "type": "string",
-            "format": "guid",
-            "minLength": 1
-          },
-          "guestPasses": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "isUnlimited": {
-            "type": "boolean",
-            "nullable": true
-          }
-        }
-      },
-      "ExternalTicketDto": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "guid",
-            "nullable": true
-          },
-          "ticketVendor": {
-            "type": "string"
-          },
-          "ticketId": {
-            "type": "string",
-            "nullable": true
-          },
-          "ticketGroup": {
-            "type": "string"
-          },
-          "ticketTier": {
-            "type": "string"
-          },
-          "totalTickets": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "ticketPrice": {
-            "type": "number",
-            "format": "decimal"
-          },
-          "promoCode": {
-            "type": "string",
-            "nullable": true
-          },
-          "currency": {
-            "type": "string"
-          },
-          "orderId": {
-            "type": "string"
-          },
-          "orderDate": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "orderAmount": {
-            "type": "number",
-            "format": "decimal"
-          },
-          "note": {
-            "type": "string",
-            "nullable": true
-          },
-          "orderAttachments": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OrderAttachmentDto"
-            }
-          }
-        }
-      },
-      "GuestSource": {
-        "type": "integer",
-        "description": "",
-        "x-enumNames": [
-          "None",
-          "TechaeonId",
-          "TechaeonCode"
-        ],
-        "enum": [
-          0,
-          1,
-          2
-        ]
-      },
-      "PortalCreateGuestEndPointInvitationResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "guid"
-          },
-          "designMappingId": {
-            "type": "string",
-            "format": "guid"
-          },
-          "guestPasses": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "isUnlimited": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "statusId": {
-            "type": "string",
-            "format": "guid"
-          },
-          "statusName": {
-            "type": "string",
-            "nullable": true
-          },
-          "statusCode": {
-            "type": "string",
-            "nullable": true
-          },
-          "isExternalTicket": {
-            "type": "boolean"
-          }
-        }
-      },
-      "GuestCustomFieldValueDto": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "guid"
-          },
-          "fieldKey": {
-            "type": "string"
-          },
-          "label": {
-            "type": "string"
-          },
-          "dataType": {
-            "type": "string"
-          },
-          "value": {
-            "nullable": true
+          "pagination": {
+            "$ref": "#/components/schemas/PortalPagination"
           }
         }
       },
@@ -1478,7 +1500,45 @@
           }
         }
       },
-      "InvitationDto": {
+      "PortalListGuestEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "designMappingId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "pageNo": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "searchTerm": {
+            "type": "string",
+            "nullable": true
+          },
+          "groupId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "sortBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "sortDirection": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "PortalPatchGuestEndPointResponse": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
@@ -1486,52 +1546,19 @@
             "type": "string",
             "format": "guid"
           },
-          "guestId": {
-            "type": "string",
-            "format": "guid"
-          },
           "eventId": {
             "type": "string",
             "format": "guid"
           },
-          "designMappingId": {
-            "type": "string",
-            "format": "guid",
-            "nullable": true
+          "firstName": {
+            "type": "string"
           },
-          "guestPasses": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "isUnlimited": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "intendedCount": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "admittedCount": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "statusId": {
-            "type": "string",
-            "format": "guid"
-          },
-          "statusName": {
+          "lastName": {
             "type": "string",
             "nullable": true
           },
-          "statusCode": {
+          "displayName": {
             "type": "string",
-            "nullable": true
-          },
-          "isConfirmed": {
-            "type": "boolean",
             "nullable": true
           },
           "phone": {
@@ -1542,69 +1569,37 @@
             "type": "string",
             "nullable": true
           },
-          "qrCodeUrl": {
+          "groupId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "groupName": {
             "type": "string",
             "nullable": true
           },
-          "tierId": {
+          "guestSource": {
+            "$ref": "#/components/schemas/GuestSource"
+          },
+          "guestCode": {
             "type": "string",
-            "format": "guid",
             "nullable": true
           },
-          "purchasedQuantity": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
+          "invitation": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PortalPatchGuestEndPointInvitationResponse"
+              }
+            ]
           },
-          "isTicketed": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "isExternalTicket": {
-            "type": "boolean"
-          },
-          "techaeons": {
+          "customFields": {
             "type": "array",
             "nullable": true,
             "items": {
-              "$ref": "#/components/schemas/TechaeonMappingDto"
+              "$ref": "#/components/schemas/GuestCustomFieldValueDto"
             }
           }
         }
-      },
-      "PatchFieldOfString": {
-        "type": "string",
-        "nullable": true,
-        "additionalProperties": false
-      },
-      "PatchFieldOfNullableOfGuid": {
-        "type": "string",
-        "format": "guid",
-        "nullable": true,
-        "additionalProperties": false
-      },
-      "PortalPatchGuestEndPointInvitationRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "designMappingId": {
-            "$ref": "#/components/schemas/PatchFieldOfNullableOfGuid"
-          },
-          "guestPasses": {
-            "$ref": "#/components/schemas/PatchFieldOfNullableOfInt32"
-          },
-          "isUnlimited": {
-            "$ref": "#/components/schemas/PatchFieldOfNullableOfBoolean"
-          },
-          "statusId": {
-            "$ref": "#/components/schemas/PatchFieldOfNullableOfGuid"
-          }
-        }
-      },
-      "PatchFieldOfNullableOfBoolean": {
-        "type": "boolean",
-        "nullable": true,
-        "additionalProperties": false
       },
       "PortalPatchGuestEndPointInvitationResponse": {
         "type": "object",
@@ -1644,37 +1639,202 @@
           }
         }
       },
-      "PortalUpdateGuestEndPointInvitationRequest": {
+      "PortalPatchGuestEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "isUpdateAllEvent": {
+            "type": "boolean"
+          },
+          "firstName": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
+          },
+          "lastName": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
+          },
+          "displayName": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
+          },
+          "phone": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
+          },
+          "email": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
+          },
+          "groupId": {
+            "$ref": "#/components/schemas/PatchFieldOfNullableOfGuid"
+          },
+          "techaeonCode": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
+          },
+          "guestCode": {
+            "$ref": "#/components/schemas/PatchFieldOfString"
+          },
+          "invitation": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PortalPatchGuestEndPointInvitationRequest"
+              }
+            ]
+          },
+          "isExternalTicket": {
+            "$ref": "#/components/schemas/PatchFieldOfNullableOfBoolean"
+          },
+          "externalTicket": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ExternalTicketDto"
+              }
+            ]
+          },
+          "customFields": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {}
+          }
+        }
+      },
+      "PatchFieldOfString": {
+        "type": "string",
+        "nullable": true,
+        "additionalProperties": false
+      },
+      "PatchFieldOfNullableOfGuid": {
+        "type": "string",
+        "format": "guid",
+        "nullable": true,
+        "additionalProperties": false
+      },
+      "PortalPatchGuestEndPointInvitationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "designMappingId": {
+            "$ref": "#/components/schemas/PatchFieldOfNullableOfGuid"
+          },
+          "guestPasses": {
+            "$ref": "#/components/schemas/PatchFieldOfNullableOfInt32"
+          },
+          "isUnlimited": {
+            "$ref": "#/components/schemas/PatchFieldOfNullableOfBoolean"
+          },
+          "statusId": {
+            "$ref": "#/components/schemas/PatchFieldOfNullableOfGuid"
+          }
+        }
+      },
+      "PatchFieldOfNullableOfInt32": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": true,
+        "additionalProperties": false
+      },
+      "PatchFieldOfNullableOfBoolean": {
+        "type": "boolean",
+        "nullable": true,
+        "additionalProperties": false
+      },
+      "PortalSendMessageToGuestEndPointRequest": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "id",
-          "designMappingId"
+          "eventId"
         ],
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "format": "guid",
+            "minLength": 1
+          },
+          "guestIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "guid"
+            }
+          },
+          "messageBody": {
+            "type": "string"
+          },
+          "typeIds": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/CommunicationType"
+            }
+          },
+          "sendToAll": {
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "PortalUpdateGuestEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
         "properties": {
           "id": {
             "type": "string",
-            "format": "guid",
-            "minLength": 1
+            "format": "guid"
           },
-          "designMappingId": {
+          "eventId": {
             "type": "string",
-            "format": "guid",
-            "minLength": 1
+            "format": "guid"
           },
-          "guestPasses": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
+          "firstName": {
+            "type": "string"
           },
-          "isUnlimited": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "statusId": {
+          "lastName": {
             "type": "string",
-            "format": "guid",
             "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "groupId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "groupName": {
+            "type": "string",
+            "nullable": true
+          },
+          "guestSource": {
+            "$ref": "#/components/schemas/GuestSource"
+          },
+          "guestCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "invitation": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PortalUpdateGuestEndPointInvitationResponse"
+              }
+            ]
+          },
+          "customFields": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/GuestCustomFieldValueDto"
+            }
           }
         }
       },
@@ -1716,118 +1876,1240 @@
           }
         }
       },
-      "CommunicationType": {
-        "type": "integer",
-        "description": "",
-        "x-enumNames": [
-          "InApp",
-          "SMS",
-          "Email"
-        ],
-        "enum": [
-          1,
-          2,
-          3
-        ]
-      },
-      "OrderAttachmentDto": {
+      "PortalUpdateGuestEndPointRequest": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "eventId",
+          "firstName",
+          "groupId"
+        ],
         "properties": {
-          "id": {
+          "eventId": {
             "type": "string",
             "format": "guid",
-            "nullable": true
+            "minLength": 1
           },
-          "fileName": {
+          "firstName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lastName": {
             "type": "string",
             "nullable": true
           },
-          "fileType": {
+          "displayName": {
             "type": "string",
             "nullable": true
           },
-          "url": {
-            "type": "string"
-          },
-          "storageFileName": {
-            "type": "string",
-            "nullable": true
-          }
-        }
-      },
-      "EventGuestOrderAttchmentDto": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "fileName": {
+          "phone": {
             "type": "string",
             "nullable": true
           },
-          "url": {
-            "type": "string",
-            "nullable": true
-          }
-        }
-      },
-      "EventGuestOrderDto": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "orderNo": {
+          "email": {
             "type": "string",
             "nullable": true
           },
-          "orderId": {
+          "groupId": {
             "type": "string",
-            "nullable": true
-          }
-        }
-      },
-      "TechaeonMappingDto": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "guid"
+            "format": "guid",
+            "minLength": 1
           },
-          "guestId": {
-            "type": "string",
-            "format": "guid"
-          },
-          "invitationId": {
-            "type": "string",
-            "format": "guid"
-          },
-          "techaeonId": {
-            "type": "string",
-            "format": "guid"
-          },
-          "privilegeCode": {
-            "type": "string"
-          },
-          "techaeonPrivilegeId": {
-            "type": "string",
-            "format": "guid"
-          },
-          "resourceType": {
-            "type": "string"
-          },
-          "resourceValue": {
-            "type": "string"
+          "isUpdateAllEvent": {
+            "type": "boolean"
           },
           "techaeonCode": {
             "type": "string",
             "nullable": true
+          },
+          "guestCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "invitation": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PortalUpdateGuestEndPointInvitationRequest"
+              }
+            ]
+          },
+          "isExternalTicket": {
+            "type": "boolean"
+          },
+          "externalTicket": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ExternalTicketDto"
+              }
+            ]
+          },
+          "customFields": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {}
           }
         }
       },
-      "PatchFieldOfNullableOfInt32": {
-        "type": "integer",
-        "format": "int32",
+      "PortalUpdateGuestEndPointInvitationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "designMappingId"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid",
+            "minLength": 1
+          },
+          "designMappingId": {
+            "type": "string",
+            "format": "guid",
+            "minLength": 1
+          },
+          "guestPasses": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "isUnlimited": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "statusId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          }
+        }
+      },
+      "PortalCreateEventEndPointResponse": {
+        "type": "object",
+        "description": "The created event.",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The event ID.",
+            "format": "guid"
+          },
+          "title": {
+            "type": "string",
+            "description": "The event title, up to 200 characters."
+          },
+          "description": {
+            "type": "string",
+            "description": "The event description.",
+            "nullable": true
+          },
+          "startDate": {
+            "type": "string",
+            "description": "When the event starts, as local time in EventTimeZone.",
+            "format": "date-time"
+          },
+          "endDate": {
+            "type": "string",
+            "description": "When the event ends, as local time in EventTimeZone.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "parentEventId": {
+            "type": "string",
+            "description": "The parent event ID when this is a sub-event; must be an event of the API key's organization.",
+            "format": "guid",
+            "nullable": true
+          },
+          "organizationId": {
+            "type": "string",
+            "description": "The organization that owns the event — always the API key's organization.",
+            "format": "guid"
+          },
+          "statusId": {
+            "type": "string",
+            "description": "The event status ID.",
+            "format": "guid",
+            "nullable": true
+          },
+          "statusName": {
+            "type": "string",
+            "description": "The event status: Draft or Published.",
+            "nullable": true
+          },
+          "typeId": {
+            "type": "string",
+            "description": "The event type: 55b7d47c-9c95-43ce-94ca-f103b819de3a (Invite only) or fbe6aba3-f2d9-4c6c-a358-cab441641b06 (Open invite).",
+            "format": "guid"
+          },
+          "typeName": {
+            "type": "string",
+            "description": "The event type name.",
+            "nullable": true
+          },
+          "maximumGuests": {
+            "type": "integer",
+            "description": "The maximum number of guests; null for no limit.",
+            "format": "int32",
+            "nullable": true
+          },
+          "phoneToCall": {
+            "type": "string",
+            "description": "Phone number guests can call about the event.",
+            "nullable": true
+          },
+          "phoneToText": {
+            "type": "string",
+            "description": "Phone number guests can text about the event.",
+            "nullable": true
+          },
+          "contactEmail": {
+            "type": "string",
+            "description": "Email address guests can contact about the event.",
+            "nullable": true
+          },
+          "additionalGuestLimit": {
+            "type": "integer",
+            "description": "How many extra guests each guest may bring; null for no limit.",
+            "format": "int32",
+            "nullable": true
+          },
+          "details": {
+            "type": "string",
+            "description": "Rich-text (HTML) details shown on the event page.",
+            "nullable": true
+          },
+          "doorOpenDate": {
+            "type": "string",
+            "description": "When doors open, as local time in EventTimeZone.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "hostName": {
+            "type": "string",
+            "description": "The host name shown to guests.",
+            "nullable": true
+          },
+          "marketingPageLink": {
+            "type": "string",
+            "description": "Custom marketing page URL for the event.",
+            "nullable": true
+          },
+          "eventTimeZone": {
+            "type": "string",
+            "description": "The IANA time zone the event's dates are in.",
+            "nullable": true
+          },
+          "isRegQuestionEnable": {
+            "type": "boolean",
+            "description": "Whether the registration widget asks the event's registration questions."
+          },
+          "isVenueHidden": {
+            "type": "boolean",
+            "description": "Whether the venue is hidden from guests."
+          },
+          "ticketCurrency": {
+            "type": "string",
+            "description": "ISO currency code for ticket prices.",
+            "nullable": true
+          },
+          "widgetRedirectUrl": {
+            "type": "string",
+            "description": "URL the registration widget sends guests to after they register.",
+            "nullable": true
+          }
+        }
+      },
+      "PortalCreateEventEndPointRequest": {
+        "type": "object",
+        "description": "A new event for the API key's organization; it is created as a draft.",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "startDate"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Required. The event title, up to 200 characters.",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "description": "The event description.",
+            "nullable": true
+          },
+          "startDate": {
+            "type": "string",
+            "description": "Required. When the event starts, as local time in EventTimeZone.",
+            "format": "date-time",
+            "minLength": 1
+          },
+          "endDate": {
+            "type": "string",
+            "description": "When the event ends, as local time in EventTimeZone; cannot be before StartDate.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "parentEventId": {
+            "type": "string",
+            "description": "The parent event ID when this is a sub-event; an event of the API key's organization, not this event or one of its sub-events.",
+            "format": "guid",
+            "nullable": true
+          },
+          "typeId": {
+            "type": "string",
+            "description": "Optional; defaults to Invite only. 55b7d47c-9c95-43ce-94ca-f103b819de3a (Invite only) or fbe6aba3-f2d9-4c6c-a358-cab441641b06 (Open invite).",
+            "format": "guid",
+            "nullable": true
+          },
+          "maximumGuests": {
+            "type": "integer",
+            "description": "The maximum number of guests; null for no limit, cannot be negative.",
+            "format": "int32",
+            "nullable": true
+          },
+          "phoneToCall": {
+            "type": "string",
+            "description": "Phone number guests can call about the event.",
+            "nullable": true
+          },
+          "phoneToText": {
+            "type": "string",
+            "description": "Phone number guests can text about the event.",
+            "nullable": true
+          },
+          "contactEmail": {
+            "type": "string",
+            "description": "Email address guests can contact about the event.",
+            "nullable": true
+          },
+          "additionalGuestLimit": {
+            "type": "integer",
+            "description": "How many extra guests each guest may bring; null for no limit, cannot be negative.",
+            "format": "int32",
+            "nullable": true
+          },
+          "details": {
+            "type": "string",
+            "description": "Rich-text (HTML) details shown on the event page.",
+            "nullable": true
+          },
+          "doorOpenDate": {
+            "type": "string",
+            "description": "When doors open, as local time in EventTimeZone.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "hostName": {
+            "type": "string",
+            "description": "The host name shown to guests.",
+            "nullable": true
+          },
+          "marketingPageLink": {
+            "type": "string",
+            "description": "Custom marketing page URL for the event.",
+            "nullable": true
+          },
+          "eventTimeZone": {
+            "type": "string",
+            "description": "The IANA time zone the event's dates are in.",
+            "nullable": true
+          },
+          "isRegQuestionEnable": {
+            "type": "boolean",
+            "description": "Whether the registration widget asks the event's registration questions."
+          },
+          "isVenueHidden": {
+            "type": "boolean",
+            "description": "Whether the venue is hidden from guests."
+          },
+          "ticketCurrency": {
+            "type": "string",
+            "description": "ISO currency code for ticket prices; defaults to USD."
+          },
+          "widgetRedirectUrl": {
+            "type": "string",
+            "description": "URL the registration widget sends guests to after they register.",
+            "nullable": true
+          }
+        }
+      },
+      "PortalGetEventEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "parentEventId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "statusId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "statusName": {
+            "type": "string",
+            "nullable": true
+          },
+          "typeId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "typeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "typeCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "maximumGuests": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "phoneToCall": {
+            "type": "string",
+            "nullable": true
+          },
+          "phoneToText": {
+            "type": "string",
+            "nullable": true
+          },
+          "contactEmail": {
+            "type": "string",
+            "nullable": true
+          },
+          "additionalGuestLimit": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "details": {
+            "type": "string",
+            "nullable": true
+          },
+          "doorOpenDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "hostName": {
+            "type": "string",
+            "nullable": true
+          },
+          "venueId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "designMappingId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "designId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "isTicketingEnabled": {
+            "type": "boolean"
+          },
+          "eventTimeZone": {
+            "type": "string",
+            "nullable": true
+          },
+          "isRegQuestionEnable": {
+            "type": "boolean"
+          },
+          "isVenueHidden": {
+            "type": "boolean"
+          },
+          "ticketCurrency": {
+            "type": "string",
+            "nullable": true
+          },
+          "widgetRedirectUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "PortalPatchEventEndPointResponse": {
+        "type": "object",
+        "description": "The event after the update.",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The event ID.",
+            "format": "guid"
+          },
+          "title": {
+            "type": "string",
+            "description": "The event title, up to 200 characters."
+          },
+          "description": {
+            "type": "string",
+            "description": "The event description.",
+            "nullable": true
+          },
+          "startDate": {
+            "type": "string",
+            "description": "When the event starts, as local time in EventTimeZone.",
+            "format": "date-time"
+          },
+          "endDate": {
+            "type": "string",
+            "description": "When the event ends, as local time in EventTimeZone.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "parentEventId": {
+            "type": "string",
+            "description": "The parent event ID when this is a sub-event; must be an event of the API key's organization.",
+            "format": "guid",
+            "nullable": true
+          },
+          "organizationId": {
+            "type": "string",
+            "description": "The organization that owns the event — always the API key's organization.",
+            "format": "guid"
+          },
+          "statusId": {
+            "type": "string",
+            "description": "The event status ID.",
+            "format": "guid",
+            "nullable": true
+          },
+          "statusName": {
+            "type": "string",
+            "description": "The event status: Draft or Published.",
+            "nullable": true
+          },
+          "typeId": {
+            "type": "string",
+            "description": "The event type: 55b7d47c-9c95-43ce-94ca-f103b819de3a (Invite only) or fbe6aba3-f2d9-4c6c-a358-cab441641b06 (Open invite).",
+            "format": "guid"
+          },
+          "typeName": {
+            "type": "string",
+            "description": "The event type name.",
+            "nullable": true
+          },
+          "maximumGuests": {
+            "type": "integer",
+            "description": "The maximum number of guests; null for no limit.",
+            "format": "int32",
+            "nullable": true
+          },
+          "phoneToCall": {
+            "type": "string",
+            "description": "Phone number guests can call about the event.",
+            "nullable": true
+          },
+          "phoneToText": {
+            "type": "string",
+            "description": "Phone number guests can text about the event.",
+            "nullable": true
+          },
+          "contactEmail": {
+            "type": "string",
+            "description": "Email address guests can contact about the event.",
+            "nullable": true
+          },
+          "additionalGuestLimit": {
+            "type": "integer",
+            "description": "How many extra guests each guest may bring; null for no limit.",
+            "format": "int32",
+            "nullable": true
+          },
+          "details": {
+            "type": "string",
+            "description": "Rich-text (HTML) details shown on the event page.",
+            "nullable": true
+          },
+          "doorOpenDate": {
+            "type": "string",
+            "description": "When doors open, as local time in EventTimeZone.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "hostName": {
+            "type": "string",
+            "description": "The host name shown to guests.",
+            "nullable": true
+          },
+          "marketingPageLink": {
+            "type": "string",
+            "description": "Custom marketing page URL for the event.",
+            "nullable": true
+          },
+          "eventTimeZone": {
+            "type": "string",
+            "description": "The IANA time zone the event's dates are in.",
+            "nullable": true
+          },
+          "isRegQuestionEnable": {
+            "type": "boolean",
+            "description": "Whether the registration widget asks the event's registration questions."
+          },
+          "isVenueHidden": {
+            "type": "boolean",
+            "description": "Whether the venue is hidden from guests."
+          },
+          "ticketCurrency": {
+            "type": "string",
+            "description": "ISO currency code for ticket prices.",
+            "nullable": true
+          },
+          "widgetRedirectUrl": {
+            "type": "string",
+            "description": "URL the registration widget sends guests to after they register.",
+            "nullable": true
+          }
+        }
+      },
+      "PortalPatchEventEndPointRequest": {
+        "type": "object",
+        "description": "Only the fields sent are changed: omit to keep, send a value to set, send null to clear.",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "description": "The event title, up to 200 characters; cannot be null.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfString"
+              }
+            ]
+          },
+          "description": {
+            "description": "The event description.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfString"
+              }
+            ]
+          },
+          "startDate": {
+            "description": "When the event starts, as local time in EventTimeZone; cannot be null.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfNullableOfDateTime"
+              }
+            ]
+          },
+          "endDate": {
+            "description": "When the event ends, as local time in EventTimeZone; cannot be before StartDate.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfNullableOfDateTime"
+              }
+            ]
+          },
+          "doorOpenDate": {
+            "description": "When doors open, as local time in EventTimeZone.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfNullableOfDateTime"
+              }
+            ]
+          },
+          "eventTimeZone": {
+            "description": "The IANA time zone the event's dates are in.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfString"
+              }
+            ]
+          },
+          "parentEventId": {
+            "description": "The parent event ID when this is a sub-event; an event of the API key's organization, not this event or one of its sub-events.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfNullableOfGuid"
+              }
+            ]
+          },
+          "typeId": {
+            "description": "55b7d47c-9c95-43ce-94ca-f103b819de3a (Invite only) or fbe6aba3-f2d9-4c6c-a358-cab441641b06 (Open invite); cannot be null.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfNullableOfGuid"
+              }
+            ]
+          },
+          "maximumGuests": {
+            "description": "The maximum number of guests; null for no limit, cannot be negative.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfNullableOfInt32"
+              }
+            ]
+          },
+          "additionalGuestLimit": {
+            "description": "How many extra guests each guest may bring; null for no limit, cannot be negative.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfNullableOfInt32"
+              }
+            ]
+          },
+          "phoneToCall": {
+            "description": "Phone number guests can call about the event.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfString"
+              }
+            ]
+          },
+          "phoneToText": {
+            "description": "Phone number guests can text about the event.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfString"
+              }
+            ]
+          },
+          "contactEmail": {
+            "description": "Email address guests can contact about the event.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfString"
+              }
+            ]
+          },
+          "hostName": {
+            "description": "The host name shown to guests.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfString"
+              }
+            ]
+          },
+          "details": {
+            "description": "Rich-text (HTML) details shown on the event page.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfString"
+              }
+            ]
+          },
+          "marketingPageLink": {
+            "description": "Custom marketing page URL for the event.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfString"
+              }
+            ]
+          },
+          "isRegQuestionEnable": {
+            "description": "Whether the registration widget asks the event's registration questions; cannot be null.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfNullableOfBoolean"
+              }
+            ]
+          },
+          "isVenueHidden": {
+            "description": "Whether the venue is hidden from guests; cannot be null.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfNullableOfBoolean"
+              }
+            ]
+          },
+          "ticketCurrency": {
+            "description": "ISO currency code for ticket prices; cannot be null.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfString"
+              }
+            ]
+          },
+          "widgetRedirectUrl": {
+            "description": "URL the registration widget sends guests to after they register.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PatchFieldOfString"
+              }
+            ]
+          },
+          "notify": {
+            "type": "boolean",
+            "description": "When true, the event's guests are notified of the change.",
+            "nullable": true
+          }
+        }
+      },
+      "PatchFieldOfNullableOfDateTime": {
+        "type": "string",
+        "format": "date-time",
         "nullable": true,
         "additionalProperties": false
+      },
+      "PortalUpdateEventDetailsEndPointResponse": {
+        "type": "object",
+        "description": "The event ID and its details after the update.",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The event ID.",
+            "format": "guid"
+          },
+          "details": {
+            "type": "string",
+            "description": "The event's details after the update.",
+            "nullable": true
+          }
+        }
+      },
+      "PortalUpdateEventDetailsEndPointRequest": {
+        "type": "object",
+        "description": "Replaces an event's rich-text details only.",
+        "additionalProperties": false,
+        "properties": {
+          "details": {
+            "type": "string",
+            "description": "The new rich-text (HTML) details; null clears them.",
+            "nullable": true
+          },
+          "notify": {
+            "type": "boolean",
+            "description": "When true, the event's guests are notified of the change.",
+            "nullable": true
+          }
+        }
+      },
+      "PortalUpdateEventEndPointResponse": {
+        "type": "object",
+        "description": "The event after the update.",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The event ID.",
+            "format": "guid"
+          },
+          "title": {
+            "type": "string",
+            "description": "The event title, up to 200 characters."
+          },
+          "description": {
+            "type": "string",
+            "description": "The event description.",
+            "nullable": true
+          },
+          "startDate": {
+            "type": "string",
+            "description": "When the event starts, as local time in EventTimeZone.",
+            "format": "date-time"
+          },
+          "endDate": {
+            "type": "string",
+            "description": "When the event ends, as local time in EventTimeZone.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "parentEventId": {
+            "type": "string",
+            "description": "The parent event ID when this is a sub-event; must be an event of the API key's organization.",
+            "format": "guid",
+            "nullable": true
+          },
+          "organizationId": {
+            "type": "string",
+            "description": "The organization that owns the event — always the API key's organization.",
+            "format": "guid"
+          },
+          "statusId": {
+            "type": "string",
+            "description": "The event status ID.",
+            "format": "guid",
+            "nullable": true
+          },
+          "statusName": {
+            "type": "string",
+            "description": "The event status: Draft or Published.",
+            "nullable": true
+          },
+          "typeId": {
+            "type": "string",
+            "description": "The event type: 55b7d47c-9c95-43ce-94ca-f103b819de3a (Invite only) or fbe6aba3-f2d9-4c6c-a358-cab441641b06 (Open invite).",
+            "format": "guid"
+          },
+          "typeName": {
+            "type": "string",
+            "description": "The event type name.",
+            "nullable": true
+          },
+          "maximumGuests": {
+            "type": "integer",
+            "description": "The maximum number of guests; null for no limit.",
+            "format": "int32",
+            "nullable": true
+          },
+          "phoneToCall": {
+            "type": "string",
+            "description": "Phone number guests can call about the event.",
+            "nullable": true
+          },
+          "phoneToText": {
+            "type": "string",
+            "description": "Phone number guests can text about the event.",
+            "nullable": true
+          },
+          "contactEmail": {
+            "type": "string",
+            "description": "Email address guests can contact about the event.",
+            "nullable": true
+          },
+          "additionalGuestLimit": {
+            "type": "integer",
+            "description": "How many extra guests each guest may bring; null for no limit.",
+            "format": "int32",
+            "nullable": true
+          },
+          "details": {
+            "type": "string",
+            "description": "Rich-text (HTML) details shown on the event page.",
+            "nullable": true
+          },
+          "doorOpenDate": {
+            "type": "string",
+            "description": "When doors open, as local time in EventTimeZone.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "hostName": {
+            "type": "string",
+            "description": "The host name shown to guests.",
+            "nullable": true
+          },
+          "marketingPageLink": {
+            "type": "string",
+            "description": "Custom marketing page URL for the event.",
+            "nullable": true
+          },
+          "eventTimeZone": {
+            "type": "string",
+            "description": "The IANA time zone the event's dates are in.",
+            "nullable": true
+          },
+          "isRegQuestionEnable": {
+            "type": "boolean",
+            "description": "Whether the registration widget asks the event's registration questions."
+          },
+          "isVenueHidden": {
+            "type": "boolean",
+            "description": "Whether the venue is hidden from guests."
+          },
+          "ticketCurrency": {
+            "type": "string",
+            "description": "ISO currency code for ticket prices.",
+            "nullable": true
+          },
+          "widgetRedirectUrl": {
+            "type": "string",
+            "description": "URL the registration widget sends guests to after they register.",
+            "nullable": true
+          }
+        }
+      },
+      "PortalUpdateEventEndPointRequest": {
+        "type": "object",
+        "description": "Replaces an event's fields; text fields left out keep their value, other fields left out are cleared.",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "startDate",
+          "typeId"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Required. The event title, up to 200 characters.",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "description": "The event description.",
+            "nullable": true
+          },
+          "startDate": {
+            "type": "string",
+            "description": "Required. When the event starts, as local time in EventTimeZone.",
+            "format": "date-time",
+            "minLength": 1
+          },
+          "endDate": {
+            "type": "string",
+            "description": "When the event ends, as local time in EventTimeZone; cannot be before StartDate.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "parentEventId": {
+            "type": "string",
+            "description": "The parent event ID when this is a sub-event; an event of the API key's organization, not this event or one of its sub-events.",
+            "format": "guid",
+            "nullable": true
+          },
+          "typeId": {
+            "type": "string",
+            "description": "Required. 55b7d47c-9c95-43ce-94ca-f103b819de3a (Invite only) or fbe6aba3-f2d9-4c6c-a358-cab441641b06 (Open invite).",
+            "format": "guid",
+            "minLength": 1
+          },
+          "maximumGuests": {
+            "type": "integer",
+            "description": "The maximum number of guests; null for no limit, cannot be negative.",
+            "format": "int32",
+            "nullable": true
+          },
+          "phoneToCall": {
+            "type": "string",
+            "description": "Phone number guests can call about the event.",
+            "nullable": true
+          },
+          "phoneToText": {
+            "type": "string",
+            "description": "Phone number guests can text about the event.",
+            "nullable": true
+          },
+          "contactEmail": {
+            "type": "string",
+            "description": "Email address guests can contact about the event.",
+            "nullable": true
+          },
+          "additionalGuestLimit": {
+            "type": "integer",
+            "description": "How many extra guests each guest may bring; null for no limit, cannot be negative.",
+            "format": "int32",
+            "nullable": true
+          },
+          "details": {
+            "type": "string",
+            "description": "Rich-text (HTML) details shown on the event page.",
+            "nullable": true
+          },
+          "doorOpenDate": {
+            "type": "string",
+            "description": "When doors open, as local time in EventTimeZone.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "hostName": {
+            "type": "string",
+            "description": "The host name shown to guests.",
+            "nullable": true
+          },
+          "marketingPageLink": {
+            "type": "string",
+            "description": "Custom marketing page URL for the event.",
+            "nullable": true
+          },
+          "notify": {
+            "type": "boolean",
+            "description": "When true, the event's guests are notified of the change.",
+            "nullable": true
+          },
+          "eventTimeZone": {
+            "type": "string",
+            "description": "The IANA time zone the event's dates are in.",
+            "nullable": true
+          },
+          "isRegQuestionEnable": {
+            "type": "boolean",
+            "description": "Whether the registration widget asks the event's registration questions."
+          },
+          "isVenueHidden": {
+            "type": "boolean",
+            "description": "Whether the venue is hidden from guests."
+          },
+          "ticketCurrency": {
+            "type": "string",
+            "description": "ISO currency code for ticket prices; reset to USD when left out."
+          },
+          "widgetRedirectUrl": {
+            "type": "string",
+            "description": "URL the registration widget sends guests to after they register.",
+            "nullable": true
+          }
+        }
+      },
+      "PortalUpdateEventInviteeEndPointResponse": {
+        "type": "object",
+        "description": "The event after the update.",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The event ID.",
+            "format": "guid"
+          },
+          "title": {
+            "type": "string",
+            "description": "The event title, up to 200 characters."
+          },
+          "description": {
+            "type": "string",
+            "description": "The event description.",
+            "nullable": true
+          },
+          "startDate": {
+            "type": "string",
+            "description": "When the event starts, as local time in EventTimeZone.",
+            "format": "date-time"
+          },
+          "endDate": {
+            "type": "string",
+            "description": "When the event ends, as local time in EventTimeZone.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "parentEventId": {
+            "type": "string",
+            "description": "The parent event ID when this is a sub-event; must be an event of the API key's organization.",
+            "format": "guid",
+            "nullable": true
+          },
+          "organizationId": {
+            "type": "string",
+            "description": "The organization that owns the event — always the API key's organization.",
+            "format": "guid"
+          },
+          "statusId": {
+            "type": "string",
+            "description": "The event status ID.",
+            "format": "guid",
+            "nullable": true
+          },
+          "statusName": {
+            "type": "string",
+            "description": "The event status: Draft or Published.",
+            "nullable": true
+          },
+          "typeId": {
+            "type": "string",
+            "description": "The event type: 55b7d47c-9c95-43ce-94ca-f103b819de3a (Invite only) or fbe6aba3-f2d9-4c6c-a358-cab441641b06 (Open invite).",
+            "format": "guid"
+          },
+          "typeName": {
+            "type": "string",
+            "description": "The event type name.",
+            "nullable": true
+          },
+          "maximumGuests": {
+            "type": "integer",
+            "description": "The maximum number of guests; null for no limit.",
+            "format": "int32",
+            "nullable": true
+          },
+          "phoneToCall": {
+            "type": "string",
+            "description": "Phone number guests can call about the event.",
+            "nullable": true
+          },
+          "phoneToText": {
+            "type": "string",
+            "description": "Phone number guests can text about the event.",
+            "nullable": true
+          },
+          "contactEmail": {
+            "type": "string",
+            "description": "Email address guests can contact about the event.",
+            "nullable": true
+          },
+          "additionalGuestLimit": {
+            "type": "integer",
+            "description": "How many extra guests each guest may bring; null for no limit.",
+            "format": "int32",
+            "nullable": true
+          },
+          "details": {
+            "type": "string",
+            "description": "Rich-text (HTML) details shown on the event page.",
+            "nullable": true
+          },
+          "doorOpenDate": {
+            "type": "string",
+            "description": "When doors open, as local time in EventTimeZone.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "hostName": {
+            "type": "string",
+            "description": "The host name shown to guests.",
+            "nullable": true
+          }
+        }
+      },
+      "PortalUpdateEventInviteeEndPointRequest": {
+        "type": "object",
+        "description": "An event's type and guest limits; the fields sent are written as-is.",
+        "additionalProperties": false,
+        "required": [
+          "typeId"
+        ],
+        "properties": {
+          "typeId": {
+            "type": "string",
+            "description": "Required. 55b7d47c-9c95-43ce-94ca-f103b819de3a (Invite only) or fbe6aba3-f2d9-4c6c-a358-cab441641b06 (Open invite).",
+            "format": "guid",
+            "minLength": 1
+          },
+          "maximumGuests": {
+            "type": "integer",
+            "description": "The maximum number of guests; null for no limit, cannot be negative.",
+            "format": "int32",
+            "nullable": true
+          },
+          "additionalGuestLimit": {
+            "type": "integer",
+            "description": "How many extra guests each guest may bring; null for no limit, cannot be negative.",
+            "format": "int32",
+            "nullable": true
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "JWTBearerAuth": {
+        "type": "http",
+        "description": "Enter a JWT token to authorize the requests...",
+        "scheme": "Bearer",
+        "bearerFormat": "JWT"
+      },
+      "X-API-KEY": {
+        "type": "apiKey",
+        "description": "API key for portal/integration endpoints. Include as the `X-API-KEY` request header.",
+        "name": "X-API-KEY",
+        "in": "header"
       }
     }
   }

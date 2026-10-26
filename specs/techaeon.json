@@ -46,7 +46,6 @@
         },
         "security": [
           {
-            "X-Signature": [],
             "X-API-KEY": []
           }
         ]
@@ -87,7 +86,6 @@
         },
         "security": [
           {
-            "X-Signature": [],
             "X-API-KEY": []
           }
         ]
@@ -97,7 +95,7 @@
           "Portal"
         ],
         "summary": "Retrieve a techaeon by ID.",
-        "description": "Returns the full details of a single techaeon, including its current status, holder contact information, group membership, and configured redirect URL.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Valid Techaeon Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Techaeon created. |\n| `ISSUED` | Techaeon issued and currently active. |\n| `TRANSFERRED` | Techaeon ownership has been transferred to another holder. |\n| `CANCELLED` | Techaeon is cancelled and no longer valid. |\n| `CONSUMED` | Techaeon has been scanned or used. |",
+        "description": "Returns the full details of a single techaeon, including its current status, holder contact information, group membership, configured redirect URL, and the privileges assigned to it.\n\n**Privileges:** `privileges` lists every privilege assigned to the techaeon (for example, entry to an event) with its resource and current status, most recently used first; privileges that have never been used come last. It is an empty list when the techaeon has no privileges.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Valid Techaeon Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Techaeon created. |\n| `ISSUED` | Techaeon issued and currently active. |\n| `TRANSFERRED` | Techaeon ownership has been transferred to another holder. |\n| `CANCELLED` | Techaeon is cancelled and no longer valid. |\n| `CONSUMED` | Techaeon has been scanned or used. |",
         "operationId": "AeonPassTechaeonAPIEndPointsTechaeonsPortalPortalGetTechaeonEndPoint",
         "parameters": [
           {
@@ -117,7 +115,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PublicTechaeonDto"
+                  "$ref": "#/components/schemas/PortalTechaeonDto"
                 }
               }
             }
@@ -125,7 +123,6 @@
         },
         "security": [
           {
-            "X-Signature": [],
             "X-API-KEY": []
           }
         ]
@@ -178,7 +175,6 @@
         },
         "security": [
           {
-            "X-Signature": [],
             "X-API-KEY": []
           }
         ]
@@ -231,7 +227,6 @@
         },
         "security": [
           {
-            "X-Signature": [],
             "X-API-KEY": []
           }
         ]
@@ -272,7 +267,6 @@
         },
         "security": [
           {
-            "X-Signature": [],
             "X-API-KEY": []
           }
         ]
@@ -325,7 +319,6 @@
         },
         "security": [
           {
-            "X-Signature": [],
             "X-API-KEY": []
           }
         ]
@@ -402,7 +395,6 @@
         },
         "security": [
           {
-            "X-Signature": [],
             "X-API-KEY": []
           }
         ]
@@ -414,7 +406,7 @@
           "Portal"
         ],
         "summary": "List techaeons for an organization.",
-        "description": "Returns a paginated list of techaeons belonging to the specified organization. Supports filtering, sorting, and free-text search.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Filtering Options:**\n- `GroupId` — Scope results to a specific techaeon group.\n- `StatusId` — Filter by a specific status.\n- `UnUsedOnly` — Return only techaeons that have not yet been consumed.\n- `ResourceType` / `ResourceValue` — Filter by linked resource (e.g., `ResourceType=EVENT` and `ResourceValue={eventId}`).\n- `PrivilegeId` / `PrivilegeCode` — Filter by assigned privilege (e.g., `PrivilegeCode=ENTRY`).\n- `SearchTerm` — Free-text search across holder name, email, phone, and techaeon code.\n\n**Valid Techaeon Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Techaeon created. |\n| `ISSUED` | Techaeon issued and currently active. |\n| `TRANSFERRED` | Techaeon ownership has been transferred to another holder. |\n| `CANCELLED` | Techaeon is cancelled and no longer valid. |\n| `CONSUMED` | Techaeon has been scanned or used. |\n\n**Response shape:**\n```json\n{\n  \"data\": [ ... ],\n  \"pagination\": {\n    \"totalCount\": 100,\n    \"page\": 1,\n    \"pageSize\": 20,\n    \"totalPages\": 5\n  }\n}\n```\nIf `PageNo`/`PageSize` are omitted, they default to `1`/`100` for the purposes of computing `pagination`.",
+        "description": "Returns a paginated list of techaeons belonging to the specified organization. Supports filtering, sorting, and free-text search.\n\n**Privileges:** each techaeon includes `privileges`, every privilege assigned to it (for example, entry to an event) with its resource and current status, most recently used first; privileges that have never been used come last. It is an empty list when the techaeon has no privileges. The `PrivilegeId` / `PrivilegeCode` filters only select which techaeons are returned; each returned techaeon still lists all of its privileges.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Filtering Options:**\n- `GroupId` — Scope results to a specific techaeon group.\n- `StatusId` — Filter by a specific status.\n- `UnUsedOnly` — Return only techaeons that have not yet been consumed.\n- `ResourceType` / `ResourceValue` — Filter by linked resource (e.g., `ResourceType=EVENT` and `ResourceValue={eventId}`).\n- `PrivilegeId` / `PrivilegeCode` — Filter by assigned privilege (e.g., `PrivilegeCode=ENTRY`).\n- `SearchTerm` — Free-text search across holder name, email, phone, and techaeon code.\n\n**Valid Techaeon Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Techaeon created. |\n| `ISSUED` | Techaeon issued and currently active. |\n| `TRANSFERRED` | Techaeon ownership has been transferred to another holder. |\n| `CANCELLED` | Techaeon is cancelled and no longer valid. |\n| `CONSUMED` | Techaeon has been scanned or used. |\n\n**Response shape:**\n```json\n{\n  \"data\": [ ... ],\n  \"pagination\": {\n    \"totalCount\": 100,\n    \"page\": 1,\n    \"pageSize\": 20,\n    \"totalPages\": 5\n  }\n}\n```\nIf `PageNo`/`PageSize` are omitted, they default to `1`/`100` for the purposes of computing `pagination`.",
         "operationId": "AeonPassTechaeonAPIEndPointsTechaeonsPortalPortalListTechaeonEndPoint",
         "parameters": [
           {
@@ -537,7 +529,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PortalPagedResponseOfPublicTechaeonDto"
+                  "$ref": "#/components/schemas/PortalPagedResponseOfPortalTechaeonDto"
                 }
               }
             }
@@ -545,7 +537,6 @@
         },
         "security": [
           {
-            "X-Signature": [],
             "X-API-KEY": []
           }
         ]
@@ -554,39 +545,6 @@
   },
   "components": {
     "schemas": {
-      "PortalCreateTechaeonEndPointRequest": {
-        "type": "object",
-        "description": "Request model for creating a new individual techaeon.",
-        "additionalProperties": false,
-        "properties": {
-          "redirectUrl": {
-            "type": "string",
-            "description": "The URL to redirect the holder to when the techaeon is scanned.\nOptional. If not provided, no redirect will occur on scan.",
-            "nullable": true
-          },
-          "eventId": {
-            "type": "string",
-            "description": "The unique identifier of the event to associate with this techaeon.\nOptional. When provided, an Entry privilege is automatically assigned to the techaeon for this event.",
-            "format": "guid",
-            "nullable": true
-          },
-          "groupId": {
-            "type": "string",
-            "description": "The unique identifier of the group to assign this techaeon to.\nOptional. If not provided, the techaeon will not belong to any group.",
-            "format": "guid",
-            "nullable": true
-          },
-          "techaeonHolder": {
-            "description": "The contact details of the individual to whom the techaeon is assigned.\nFirstName is required. At least one of Phone or Email must be provided.",
-            "nullable": true,
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/TechaeonHolderRequestDto"
-              }
-            ]
-          }
-        }
-      },
       "PublicTechaeonDto": {
         "type": "object",
         "description": "Represents a techaeon as returned by the public portal API.\nA techaeon is a digital pass or token that can be assigned to an individual holder and used for access control, event entry, or other privilege-based workflows.",
@@ -653,6 +611,253 @@
           }
         }
       },
+      "TechaeonHolderDto": {
+        "type": "object",
+        "description": "Represents the contact details of a techaeon holder as returned in API responses.",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The unique identifier of the holder record within the system.",
+            "format": "guid",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "description": "The phone number of the holder, including country code.",
+            "nullable": true
+          },
+          "firstName": {
+            "type": "string",
+            "description": "The first name of the holder.",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "description": "The last name of the holder.",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "description": "The email address of the holder.",
+            "nullable": true
+          },
+          "userId": {
+            "type": "string",
+            "description": "The unique identifier of the platform user account linked to this holder, if any.\nnull if the holder does not have an associated user account on the platform.",
+            "format": "guid",
+            "nullable": true
+          }
+        }
+      },
+      "PortalCreateTechaeonEndPointRequest": {
+        "type": "object",
+        "description": "Request model for creating a new individual techaeon.",
+        "additionalProperties": false,
+        "properties": {
+          "redirectUrl": {
+            "type": "string",
+            "description": "The URL to redirect the holder to when the techaeon is scanned.\nOptional. If not provided, no redirect will occur on scan.",
+            "nullable": true
+          },
+          "eventId": {
+            "type": "string",
+            "description": "The unique identifier of the event to associate with this techaeon.\nOptional. When provided, an Entry privilege is automatically assigned to the techaeon for this event.",
+            "format": "guid",
+            "nullable": true
+          },
+          "groupId": {
+            "type": "string",
+            "description": "The unique identifier of the group to assign this techaeon to.\nOptional. If not provided, the techaeon will not belong to any group.",
+            "format": "guid",
+            "nullable": true
+          },
+          "techaeonHolder": {
+            "description": "The contact details of the individual to whom the techaeon is assigned.\nFirstName is required. At least one of Phone or Email must be provided.",
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TechaeonHolderRequestDto"
+              }
+            ]
+          }
+        }
+      },
+      "TechaeonHolderRequestDto": {
+        "type": "object",
+        "description": "Represents the contact details of the individual who will hold a techaeon.\nFirstName is required. At least one of Phone or Email must be provided.",
+        "additionalProperties": false,
+        "properties": {
+          "phone": {
+            "type": "string",
+            "description": "The phone number of the techaeon holder, including country code.\nOptional, but required when Email is not provided.",
+            "nullable": true
+          },
+          "firstName": {
+            "type": "string",
+            "description": "The first name of the techaeon holder. Required."
+          },
+          "lastName": {
+            "type": "string",
+            "description": "The last name of the techaeon holder. Optional.",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "description": "The email address of the techaeon holder.\nOptional, but required when Phone is not provided.",
+            "nullable": true
+          }
+        }
+      },
+      "PortalTechaeonDto": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PublicTechaeonDto"
+          },
+          {
+            "type": "object",
+            "description": "Represents a techaeon as returned by the portal get and list APIs, including the privileges assigned to it.",
+            "additionalProperties": false,
+            "properties": {
+              "privileges": {
+                "type": "array",
+                "description": "The privileges assigned to this techaeon (for example, entry to an event), most recently used first.\nPrivileges that have never been used are listed after the used ones.\nAn empty list if the techaeon has no privileges.",
+                "items": {
+                  "$ref": "#/components/schemas/PortalTechaeonPrivilegeDto"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "PortalTechaeonPrivilegeDto": {
+        "type": "object",
+        "description": "A privilege assigned to a techaeon, such as entry to an event, together with its resource and current status.",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The unique identifier of this privilege assignment.",
+            "format": "guid"
+          },
+          "techaeonId": {
+            "type": "string",
+            "description": "The unique identifier of the techaeon the privilege is assigned to.",
+            "format": "guid"
+          },
+          "privilegeId": {
+            "type": "string",
+            "description": "The unique identifier of the privilege type.",
+            "format": "guid"
+          },
+          "privilegeCode": {
+            "type": "string",
+            "description": "The machine-readable code of the privilege type.",
+            "nullable": true
+          },
+          "privilegeTitle": {
+            "type": "string",
+            "description": "The display title of the privilege type.",
+            "nullable": true
+          },
+          "resourceType": {
+            "type": "string",
+            "description": "The type of resource the privilege grants access to.",
+            "nullable": true
+          },
+          "resourceValue": {
+            "type": "string",
+            "description": "The identifier of the resource the privilege grants access to (for an event, the event ID).",
+            "nullable": true
+          },
+          "resourceTitle": {
+            "type": "string",
+            "description": "The display title of the resource. null if the resource is not known.",
+            "nullable": true
+          },
+          "statusId": {
+            "type": "string",
+            "description": "The unique identifier of the current privilege status.",
+            "format": "guid",
+            "nullable": true
+          },
+          "statusName": {
+            "type": "string",
+            "description": "The display name of the current privilege status.",
+            "nullable": true
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "The machine-readable code of the current privilege status.",
+            "nullable": true
+          },
+          "startDate": {
+            "type": "string",
+            "description": "The start date of the resource. null if not applicable.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "endDate": {
+            "type": "string",
+            "description": "The end date of the resource. null if not applicable.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "resourceTimezone": {
+            "type": "string",
+            "description": "The time zone of the resource. null if not applicable.",
+            "nullable": true
+          },
+          "lastUsedOn": {
+            "type": "string",
+            "description": "The UTC timestamp of the last time the privilege was used. null if it has never been used.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "redirectUrl": {
+            "type": "string",
+            "description": "The URL the holder is redirected to for this privilege. null if no redirect is configured.",
+            "nullable": true
+          }
+        }
+      },
+      "PortalPagedResponseOfPortalTechaeonDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PortalTechaeonDto"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PortalPagination"
+          }
+        }
+      },
+      "PortalPagination": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "totalCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "PortalUpdateTechaeonRedirectEndPointRequest": {
         "type": "object",
         "description": "Request model for updating the redirect URL of a specific techaeon.",
@@ -673,37 +878,6 @@
           "statusCode": {
             "type": "string",
             "description": "The new status code to apply to the techaeon. Required.\nValid values: CREATED | ISSUED | TRANSFERRED | CANCELLED | CONSUMED"
-          }
-        }
-      },
-      "PortalCreateTechaeonGroupEndPointRequest": {
-        "type": "object",
-        "description": "Request model for creating a new techaeon group and bulk-generating techaeons.",
-        "additionalProperties": false,
-        "properties": {
-          "eventId": {
-            "type": "string",
-            "description": "The unique identifier of the event to link to this group. Optional.\nWhen provided, an Entry privilege is automatically assigned to every generated techaeon for this event.",
-            "format": "guid",
-            "nullable": true
-          },
-          "groupName": {
-            "type": "string",
-            "description": "The display name for the techaeon group. Required."
-          },
-          "redirectUrl": {
-            "type": "string",
-            "description": "The URL to redirect holders to when any techaeon in this group is scanned. Optional.\nIf not provided, no group-level redirect will be applied.",
-            "nullable": true
-          },
-          "noOfTechaeons": {
-            "type": "integer",
-            "description": "The number of techaeons to generate and include in this group. Required.\nEach generated techaeon will be created with an initial status of CREATED.",
-            "format": "int32"
-          },
-          "isTechaeonCodeEnabled": {
-            "type": "boolean",
-            "description": "When true, a unique short alphanumeric code is generated and assigned to each techaeon in the group.\nThese codes can be used for QR code generation or manual entry at check-in points."
           }
         }
       },
@@ -767,6 +941,52 @@
           }
         }
       },
+      "PortalCreateTechaeonGroupEndPointRequest": {
+        "type": "object",
+        "description": "Request model for creating a new techaeon group and bulk-generating techaeons.",
+        "additionalProperties": false,
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "description": "The unique identifier of the event to link to this group. Optional.\nWhen provided, an Entry privilege is automatically assigned to every generated techaeon for this event.",
+            "format": "guid",
+            "nullable": true
+          },
+          "groupName": {
+            "type": "string",
+            "description": "The display name for the techaeon group. Required."
+          },
+          "redirectUrl": {
+            "type": "string",
+            "description": "The URL to redirect holders to when any techaeon in this group is scanned. Optional.\nIf not provided, no group-level redirect will be applied.",
+            "nullable": true
+          },
+          "noOfTechaeons": {
+            "type": "integer",
+            "description": "The number of techaeons to generate and include in this group. Required.\nEach generated techaeon will be created with an initial status of CREATED.",
+            "format": "int32"
+          },
+          "isTechaeonCodeEnabled": {
+            "type": "boolean",
+            "description": "When true, a unique short alphanumeric code is generated and assigned to each techaeon in the group.\nThese codes can be used for QR code generation or manual entry at check-in points."
+          }
+        }
+      },
+      "PortalPagedResponseOfTechaeonGroupDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TechaeonGroupDto"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PortalPagination"
+          }
+        }
+      },
       "PortalUpdateTechaeonGroupEndPointRequest": {
         "type": "object",
         "description": "Request model for updating an existing techaeon group's configuration.",
@@ -792,123 +1012,26 @@
             "description": "When true, ensures all techaeons in the group have a unique short alphanumeric code assigned.\nIf toggled from false to true, codes are generated and assigned to all existing techaeons in the group that do not already have one."
           }
         }
+      }
+    },
+    "securitySchemes": {
+      "JWTBearerAuth": {
+        "type": "http",
+        "description": "Enter a JWT token to authorize the requests...",
+        "scheme": "Bearer",
+        "bearerFormat": "JWT"
       },
-      "PortalPagedResponseOfTechaeonGroupDto": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TechaeonGroupDto"
-            }
-          },
-          "pagination": {
-            "$ref": "#/components/schemas/PortalPagination"
-          }
-        }
+      "X-Signature": {
+        "type": "apiKey",
+        "description": "Signature With Access Key for API authentication",
+        "name": "X-Signature",
+        "in": "header"
       },
-      "PortalPagedResponseOfPublicTechaeonDto": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PublicTechaeonDto"
-            }
-          },
-          "pagination": {
-            "$ref": "#/components/schemas/PortalPagination"
-          }
-        }
-      },
-      "TechaeonHolderRequestDto": {
-        "type": "object",
-        "description": "Represents the contact details of the individual who will hold a techaeon.\nFirstName is required. At least one of Phone or Email must be provided.",
-        "additionalProperties": false,
-        "properties": {
-          "phone": {
-            "type": "string",
-            "description": "The phone number of the techaeon holder, including country code.\nOptional, but required when Email is not provided.",
-            "nullable": true
-          },
-          "firstName": {
-            "type": "string",
-            "description": "The first name of the techaeon holder. Required."
-          },
-          "lastName": {
-            "type": "string",
-            "description": "The last name of the techaeon holder. Optional.",
-            "nullable": true
-          },
-          "email": {
-            "type": "string",
-            "description": "The email address of the techaeon holder.\nOptional, but required when Phone is not provided.",
-            "nullable": true
-          }
-        }
-      },
-      "TechaeonHolderDto": {
-        "type": "object",
-        "description": "Represents the contact details of a techaeon holder as returned in API responses.",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "The unique identifier of the holder record within the system.",
-            "format": "guid",
-            "nullable": true
-          },
-          "phone": {
-            "type": "string",
-            "description": "The phone number of the holder, including country code.",
-            "nullable": true
-          },
-          "firstName": {
-            "type": "string",
-            "description": "The first name of the holder.",
-            "nullable": true
-          },
-          "lastName": {
-            "type": "string",
-            "description": "The last name of the holder.",
-            "nullable": true
-          },
-          "email": {
-            "type": "string",
-            "description": "The email address of the holder.",
-            "nullable": true
-          },
-          "userId": {
-            "type": "string",
-            "description": "The unique identifier of the platform user account linked to this holder, if any.\nnull if the holder does not have an associated user account on the platform.",
-            "format": "guid",
-            "nullable": true
-          }
-        }
-      },
-      "PortalPagination": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "totalCount": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "page": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "pageSize": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "totalPages": {
-            "type": "integer",
-            "format": "int32"
-          }
-        }
+      "X-API-KEY": {
+        "type": "apiKey",
+        "description": "API Key of Organization for API authentication",
+        "name": "X-API-KEY",
+        "in": "header"
       }
     }
   }

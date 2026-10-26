@@ -260,7 +260,7 @@
           "Portal"
         ],
         "summary": "Fetch list of contacts.",
-        "description": "Returns a paginated list of contacts for an organization. Page params are optional — defaults to the first 100 contacts, ordered by display name.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Response shape:**\n```json\n{\n  \"data\": [ ... ],\n  \"pagination\": {\n    \"totalCount\": 100,\n    \"page\": 1,\n    \"pageSize\": 20,\n    \"totalPages\": 5\n  }\n}\n```\nIf `PageNo`/`PageSize` are omitted, they default to `1`/`100` for the purposes of computing `pagination`.",
+        "description": "Returns a paginated list of contacts for an organization. Page params are optional — defaults to the first 100 contacts, ordered by display name.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Filtering Options:**\n- `SearchTerm` — Free-text search across contact name, email, and phone.\n- `SortBy` / `SortDirection` (`asc` or `desc`) — Order the results.\n- `IncludeAll` — Include inactive (soft-deleted) contacts.\n- `CustomFields` — A JSON object string, keyed by custom field definition id (see AeonPassGlobal's `GET /portal/custom-fields?entityType=CONTACT`), e.g. `{\"<definitionId>\":\"value\"}`. A contact matches only if its custom field values contain every key/value pair given here (AND across keys, exact-value match per key). Omit entirely to skip this filter. Sent as a plain query string parameter since a Dictionary can't bind directly from a GET request.\n\n**Response shape:**\n```json\n{\n  \"data\": [ ... ],\n  \"pagination\": {\n    \"totalCount\": 100,\n    \"page\": 1,\n    \"pageSize\": 20,\n    \"totalPages\": 5\n  }\n}\n```\nIf `PageNo`/`PageSize` are omitted, they default to `1`/`100` for the purposes of computing `pagination`.",
         "operationId": "AeonPassOrganizationAPIEndPointsContactsPortalPortalListContactEndPoint",
         "parameters": [
           {
@@ -311,6 +311,14 @@
             "required": true,
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "name": "customFields",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
             }
           }
         ],

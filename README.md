@@ -118,7 +118,7 @@ Two things cost real debugging time; both are load-bearing:
 
 | Tool | Description |
 |------|-------------|
-| `get_techaeon` | Get a single techaeon by ID |
+| `get_techaeon` | Get a single techaeon by ID, including its privileges |
 | `list_techaeons` | List, search, and filter techaeons (paginated) |
 | `create_techaeon` | Create a techaeon and assign to a holder |
 | `update_techaeon_status` | Change lifecycle status |
@@ -144,8 +144,9 @@ Two things cost real debugging time; both are load-bearing:
 | `update_event_details` | Replace the event's HTML details |
 | `update_event_invitee` | Set event type and guest limits |
 | `publish_event` | Publish a draft event |
-| `list_guests` | List, search, and filter guests for an event (paginated) |
-| `get_guest` | Get one guest, including custom field values |
+| `list_event_types` | List the event types an event's `typeId` can be |
+| `list_guests` | List, search, and filter guests for an event, including by custom field value (paginated) |
+| `get_guest` | Get one guest, including all their invitations and custom field values |
 | `create_guest` | Add a guest to an event, optionally issuing an invitation |
 | `update_guest` | Full update of guest details or invitation |
 | `patch_guest` | Partial update — only the fields you pass are changed |
@@ -175,7 +176,7 @@ belongs to. All paginated, with the same event filters (`status`, `searchTerm`,
 
 | Tool | Description |
 |------|-------------|
-| `list_contacts` | List and search organization contacts (paginated) |
+| `list_contacts` | List, search, and filter organization contacts, including by custom field value (paginated) |
 | `get_contact` | Get a single contact by ID |
 | `create_contact` | Create a new contact |
 | `update_contact` | Update contact details |
@@ -406,7 +407,7 @@ key is a parameter rather than a module-level env read, so each entrypoint
 decides where it comes from:
 
 ```
-src/api.ts     createClient(apiKey) → the 56 API calls, bound to that key
+src/api.ts     createClient(apiKey) → the 57 API calls, bound to that key
 src/realtime.ts SignalR chat subscriptions, keyed by sha256(apiKey) + scope
 src/server.ts  createServer(client) → registers the tools
 src/app.ts     Hono app; reads X-API-KEY per request

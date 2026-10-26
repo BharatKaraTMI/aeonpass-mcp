@@ -40,7 +40,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "get_techaeon",
-    "Get full details of a single techaeon by ID, including status, holder info, group, and redirect URL",
+    "Get full details of a single techaeon by ID, including status, holder info, group, redirect URL, and privileges — every privilege assigned to it (e.g. ENTRY to an event) with its resource, status and lastUsedOn, most recently used first; never-used ones last; [] when it has none.",
     { id: z.string().describe("Techaeon GUID") },
     async ({ id }) => ({
       content: [{ type: "text", text: JSON.stringify(await client.getTechaeon(id), null, 2) }],
@@ -49,7 +49,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "list_techaeons",
-    "List techaeons with pagination, filtering by group/status/search, and sorting. Returns { data: [...], pagination: { totalCount, page, pageSize, totalPages } }.",
+    "List techaeons with pagination, filtering by group/status/search, and sorting. Returns { data: [...], pagination: { totalCount, page, pageSize, totalPages } }. Each row includes privileges, as on get_techaeon; the privilege filters only pick which techaeons come back — each still lists all of its privileges.",
     {
       groupId: z.string().optional().describe("Filter to a specific group"),
       pageNo: z.number().optional().describe("Page number (1-based)"),
@@ -207,7 +207,9 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   const eventTypeId = z
     .string()
-    .describe(`Event type: ${EVENT_TYPES.INVITEONLY} (Invite only) or ${EVENT_TYPES.OPENINVITE} (Open invite)`);
+    .describe(
+      `Event type id from list_event_types, e.g. ${EVENT_TYPES.INVITEONLY} (Invite only) or ${EVENT_TYPES.OPENINVITE} (Open invite)`
+    );
   const localDate = (what: string) =>
     z.string().describe(`${what}, as LOCAL time in eventTimeZone (e.g. 2026-11-05T19:00:00), not UTC`);
   const eventFields = {
@@ -320,6 +322,15 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
     })
   );
 
+  server.tool(
+    "list_event_types",
+    "List the event types an event's typeId can be: [{ id, typeName, typeCode }] (e.g. INVITEONLY, OPENINVITE). Pass id as typeId to create_event, update_event, patch_event or update_event_invitee. Master data — the same for every organization, stable and not paginated.",
+    {},
+    async () => ({
+      content: [{ type: "text", text: JSON.stringify(await client.listEventTypes(), null, 2) }],
+    })
+  );
+
   // The event filters every /event/list* and /invitation/list* read accepts.
   const eventFilters = {
     pageNo: z.number().optional().describe("Page number (1-based, default 1)"),
@@ -423,7 +434,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "list_guests",
-    "List guests for an event with pagination, search, and filtering. Returns { data: [...], pagination: { totalCount, page, pageSize, totalPages } }. Each guest includes invitation status.",
+    "List guests for an event with pagination, search, and filtering. Returns { data: [...], pagination: { totalCount, page, pageSize, totalPages } }. Each guest includes invitation status, but not custom field values — read those with get_guest.",
     {
       eventId: z.string().describe("Event GUID"),
       pageNo: z.number().optional().describe("Page number (1-based)"),
@@ -433,6 +444,12 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
       designMappingId: z.string().optional().describe("Filter by invitation design GUID"),
       sortBy: z.string().optional().describe("Field to sort by"),
       sortDirection: z.enum(["asc", "desc"]).optional(),
+      customFields: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe(
+          'Filter by custom field values, keyed by GUEST definition id (not fieldKey — that is a 400), e.g. { "<definitionId>": "Vegan" }. A guest matches only if it has every pair: exact, case-sensitive match, AND across keys and with the other filters.'
+        ),
     },
     async ({ eventId, ...params }) => ({
       content: [{ type: "text", text: JSON.stringify(await client.listGuests(eventId, params), null, 2) }],
@@ -441,13 +458,13 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "get_guest",
-    "Get one guest's full details by ID, including their invitation and their custom field values. This is the only guest read that returns custom fields: each comes back resolved as { id, fieldKey, label, dataType, value }, where id is the field definition id (the key you write it under). customFields is empty or absent when none are set.",
+    "Get one guest's full details by ID, including their invitations and their custom field values. Invitations come back as an `invitations` array of the guest's active invitations — empty for a guest without one; there is no single `invitation` field. This is the only guest read that returns custom fields: each comes back resolved as { id, fieldKey, label, dataType, value }, where id is the field definition id (the key you write it under). customFields is empty or absent when none are set.",
     {
       id: z.string().describe("Guest GUID"),
       invitationId: z
         .string()
         .optional()
-        .describe("Return this invitation instead of the guest's current one, for a guest with more than one"),
+        .describe("Narrow `invitations` to this one invitation. Omit to get all of the guest's active invitations."),
     },
     async ({ id, invitationId }) => ({
       content: [{ type: "text", text: JSON.stringify(await client.getGuest(id, invitationId), null, 2) }],
@@ -628,14 +645,25 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "list_contacts",
-    "List contacts for your organization (resolved from the API key) with pagination and search. Returns { data: [...], pagination }. customFields is always null here — read a contact's custom field values with get_contact.",
+    "List contacts for your organization (resolved from the API key) with pagination, search, and custom field filtering. Returns { data: [...], pagination }. customFields is always null on the rows, even when filtering by it — read a contact's custom field values with get_contact.",
     {
       pageNo: z.number().optional(),
       pageSize: z.number().optional(),
       searchTerm: z.string().optional(),
       sortBy: z.string().optional(),
       sortDirection: z.enum(["asc", "desc"]).optional(),
-      includeAll: z.boolean().optional().describe("Include all contacts (default true)"),
+      includeAll: z
+        .boolean()
+        .optional()
+        .describe(
+          "Include soft-deleted contacts (default true). Those rows have isActive: false, and get_contact returns 404 for them — pass false for live contacts only."
+        ),
+      customFields: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe(
+          'Filter by custom field values, keyed by CONTACT definition id (not fieldKey — that is a 400), e.g. { "<definitionId>": "Gold" }. A contact matches only if it has every pair: exact, case-sensitive match, AND across keys and with the other filters.'
+        ),
     },
     async (params) => ({
       content: [{ type: "text", text: JSON.stringify(await client.listContacts(params), null, 2) }],

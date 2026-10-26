@@ -43,7 +43,7 @@ const COVERED = {
   "POST /api/portal/event/{id}/publish": "publishEvent",
   "POST /api/portal/guest": "createGuest",
   "GET /api/portal/guest/{id}": "getGuest",
-  "POST /api/portal/guest/{eventId}/list": "listGuests",
+  "GET /api/portal/guest/{eventId}/list": "listGuests",
   "PUT /api/portal/guest/{id}": "updateGuest",
   "PATCH /api/portal/guest/{id}": "patchGuest",
   "DELETE /api/portal/guest/{id}": "deleteGuest",
@@ -82,6 +82,7 @@ const COVERED = {
   "PUT /api/portal/custom-fields/{id}/status": "changeCustomFieldStatus",
   "PUT /api/portal/custom-fields/{entityType}/reorder": "reorderCustomFields",
 
+  "GET /api/portal/event/types": "listEventTypes",
   "GET /api/portal/event/list": "listEvents",
   "GET /api/portal/event/list/contact/{contactId}": "listEventsByContact",
   "GET /api/portal/event/list/contact/{contactId}/guests": "listGuestRecordsByContact",

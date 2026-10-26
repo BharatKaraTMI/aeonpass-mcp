@@ -93,7 +93,10 @@ const eventListQuery = (p: EventListFilters & { eventId?: string; invitationStat
   invitationStatus: p.invitationStatus,
 });
 
-/** The two event types the API accepts as `typeId`. */
+/**
+ * The event types as of Oct 2026. `listEventTypes` is the source of truth;
+ * these are stable, org-independent master data, kept here for descriptions.
+ */
 export const EVENT_TYPES = {
   INVITEONLY: "55b7d47c-9c95-43ce-94ca-f103b819de3a",
   OPENINVITE: "fbe6aba3-f2d9-4c6c-a358-cab441641b06",
@@ -494,6 +497,14 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
     // or email (case-insensitive) — the same person on three events is three
     // guest records. An unknown or other-org guest/contact is a 404.
 
+    /**
+     * Every event type, as a bare array of `{ id, typeName, typeCode }` — not
+     * paged, and the same for every organization. `id` is an event's `typeId`.
+     */
+    listEventTypes() {
+      return request("GET", "/api/portal/event/types");
+    },
+
     /** Active, top-level events — drafts included unless `status` says otherwise. */
     listEvents(params: EventListFilters) {
       return request("GET", "/api/portal/event/list", undefined, eventListQuery(params));
@@ -546,9 +557,9 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
 
     /**
      * The one guest read that returns custom field values, resolved to
-     * `{ id, fieldKey, label, dataType, value }`. `invitationId` scopes the
-     * returned `invitation` for a guest with more than one; it defaults to the
-     * current one.
+     * `{ id, fieldKey, label, dataType, value }`. Invitations come back as an
+     * `invitations` array — every active one, or only `invitationId` when it is
+     * passed. (Until Oct 2026 this was a single nullable `invitation`.)
      */
     getGuest(id: string, invitationId?: string) {
       return request("GET", `/api/portal/guest/${id}`, undefined, { invitationId });
@@ -583,6 +594,12 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
       return request("POST", "/api/portal/guest", params);
     },
 
+    // A GET with query params since Oct 2026 (dev and stage) — it was a POST
+    // with a JSON body, which now returns 405. `customFields` is a filter here,
+    // not a write: keyed by GUEST definition id, exact-value and case-sensitive
+    // match, AND across keys and with the other filters. It travels as one
+    // JSON-encoded query value; keying by `fieldKey` is a 400. Rows still carry
+    // no custom field values — read those with `getGuest`.
     listGuests(
       eventId: string,
       params: {
@@ -593,9 +610,19 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
         designMappingId?: string;
         sortBy?: string;
         sortDirection?: string;
+        customFields?: Record<string, unknown>;
       }
     ) {
-      return request("POST", `/api/portal/guest/${eventId}/list`, params);
+      return request("GET", `/api/portal/guest/${eventId}/list`, undefined, {
+        pageNo: params.pageNo ? String(params.pageNo) : undefined,
+        pageSize: params.pageSize ? String(params.pageSize) : undefined,
+        searchTerm: params.searchTerm,
+        groupId: params.groupId,
+        designMappingId: params.designMappingId,
+        sortBy: params.sortBy,
+        sortDirection: params.sortDirection,
+        customFields: params.customFields && JSON.stringify(params.customFields),
+      });
     },
 
     updateGuest(
@@ -698,7 +725,8 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
     // field. Keying by `fieldKey` fails with the misleading "CustomFields must
     // be a valid JSON object". Values read back on `getContact` and on the
     // create/update response; `listContacts` returns `customFields: null`, and
-    // `uploadContacts` ignores the field entirely.
+    // `uploadContacts` ignores the field entirely. On `listContacts` it is a
+    // filter instead, with the same rules as on `listGuests`.
 
     createContact(params: {
       firstName: string;
@@ -761,6 +789,7 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
       sortBy?: string;
       sortDirection?: string;
       includeAll?: boolean;
+      customFields?: Record<string, unknown>;
     }) {
       const query: Record<string, string | undefined> = {
         includeAll: String(params.includeAll ?? true),
@@ -770,6 +799,7 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
       if (params.searchTerm) query.searchTerm = params.searchTerm;
       if (params.sortBy) query.sortBy = params.sortBy;
       if (params.sortDirection) query.sortDirection = params.sortDirection;
+      if (params.customFields) query.customFields = JSON.stringify(params.customFields);
       return request("GET", "/api/portal/contact/list", undefined, query);
     },
 
@@ -1135,7 +1165,7 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
     },
   };
 
-  // Wrap every method once rather than at 56 call sites. Failures are recorded
+  // Wrap every method once rather than at 57 call sites. Failures are recorded
   // and rethrown — logging must never change behaviour.
   const instrumented = Object.fromEntries(
     Object.entries(methods).map(([name, fn]) => [

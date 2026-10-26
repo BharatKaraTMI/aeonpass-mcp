@@ -17,7 +17,7 @@
           "Portal"
         ],
         "summary": "Create a new event.",
-        "description": "Creates a new event in the API key's organization. The event is created as a **draft** — publish it with\n`POST /portal/event/{Id}/publish`.\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Behavior:**\n- `Title` (up to 200 characters) and `StartDate` are required.\n- `TypeId` is optional and defaults to **Invite only**.\n- `ParentEventId` is optional and makes the new event a sub-event.\n- The response is the created event; save its `Id` to update or publish it later.\n\n**Validation** (nothing is written when a rule fails):\n- A property the request does not define → `400`.\n- `TypeId` that is not one of the event types below → `404`.\n- A negative `MaximumGuests` or `AdditionalGuestLimit` → `400`.\n- `EndDate` before `StartDate` → `400`.\n- `ParentEventId` that is the event itself or one of its sub-events → `400`; an event of another organization → `404`.\n\n**Event types (`TypeId`):**\n| `TypeId` | Type |\n|----------|------|\n| `55b7d47c-9c95-43ce-94ca-f103b819de3a` | Invite only (`INVITEONLY`) |\n| `fbe6aba3-f2d9-4c6c-a358-cab441641b06` | Open invite (`OPENINVITE`) |\n\n**Dates:** `StartDate`, `EndDate` and `DoorOpenDate` are local times in the event's `EventTimeZone`\n(an IANA name such as `America/Los_Angeles`).\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
+        "description": "Creates a new event in the API key's organization. The event is created as a **draft** — publish it with\n`POST /portal/event/{Id}/publish`.\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Behavior:**\n- `Title` (up to 200 characters) and `StartDate` are required.\n- `TypeId` is optional and defaults to **Invite only** (`INVITEONLY`).\n- `ParentEventId` is optional and makes the new event a sub-event.\n- The response is the created event; save its `Id` to update or publish it later.\n\n**Validation** (nothing is written when a rule fails):\n- A property the request does not define → `400`.\n- `TypeId` that is not an event type from `GET /portal/event/types` → `404`.\n- A negative `MaximumGuests` or `AdditionalGuestLimit` → `400`.\n- `EndDate` before `StartDate` → `400`.\n- `ParentEventId` that is the event itself or one of its sub-events → `400`; an event of another organization → `404`.\n\n**Event types (`TypeId`):** send the `Id` of an event type returned by `GET /portal/event/types`\n(e.g. Invite only — `INVITEONLY`, Open invite — `OPENINVITE`). Event types are the same for every organization.\n\n**Dates:** `StartDate`, `EndDate` and `DoorOpenDate` are local times in the event's `EventTimeZone`\n(an IANA name such as `America/Los_Angeles`).\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
         "operationId": "AeonPassEventAPIEndPointsEventsPortalPortalCreateEventEndPoint",
         "requestBody": {
           "x-name": "PortalCreateEventEndPointRequest",
@@ -93,7 +93,7 @@
           "Portal"
         ],
         "summary": "Partially update an event — only the fields you send are touched.",
-        "description": "Updates only the fields present in the request body. This is a true partial update (JSON Merge Patch\nsemantics), unlike `PUT /portal/event/{Id}` which replaces the whole record.\n\n**Every field is a plain value in the JSON — never a `{ \"isSet\": ..., \"value\": ... }` wrapper.** That shape\nonly exists internally to tell \"omitted\" apart from \"sent as null\"; sending it literally as JSON will fail to\ndeserialize. For example, to rename an event and touch nothing else:\n```json\n{\n  \"title\": \"Annual Tech Conference 2026\"\n}\n```\n\n- **Omit a field** to leave it completely unchanged.\n- **Send a field with a value** to set/replace it.\n- **Send a field as explicit `null`** to clear it, where the event allows it (e.g. `description`, `endDate`,\n  `doorOpenDate`, `maximumGuests`, `parentEventId`, `hostName`). Fields an event can never be without —\n  `title`, `startDate`, `typeId`, `ticketCurrency`, `isRegQuestionEnable`, `isVenueHidden` — reject an\n  explicit `null` with a validation error instead of silently ignoring it.\n- At least one field must be sent, otherwise `400` (`NO_FIELDS_TO_UPDATE`).\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- `title` is limited to 200 characters.\n- The **Validation** rules below apply to the fields you send; `endDate` before `startDate` is checked against the\n  event as it will be stored, so sending only one of them is compared with the other's current value.\n- The event's status, ticketing and email-notification settings are not changed here — use\n  `POST /portal/event/{Id}/publish` to publish.\n- When the event is published, ticketed and its `title` or `description` changes, the ticketing store is\n  updated too.\n- The response is the whole event after the update.\n\n**`Notify`:** when `true`, the event's guests are sent an update notification about the change. The host name on\nthe notification is the organization owner's.\n\n**Validation** (nothing is written when a rule fails):\n- A property the request does not define → `400`.\n- `TypeId` that is not one of the event types below → `404`.\n- A negative `MaximumGuests` or `AdditionalGuestLimit` → `400`.\n- `EndDate` before `StartDate` → `400`.\n- `ParentEventId` that is the event itself or one of its sub-events → `400`; an event of another organization → `404`.\n\n**Event types (`TypeId`):**\n| `TypeId` | Type |\n|----------|------|\n| `55b7d47c-9c95-43ce-94ca-f103b819de3a` | Invite only (`INVITEONLY`) |\n| `fbe6aba3-f2d9-4c6c-a358-cab441641b06` | Open invite (`OPENINVITE`) |\n\n**Dates:** `StartDate`, `EndDate` and `DoorOpenDate` are local times in the event's `EventTimeZone`\n(an IANA name such as `America/Los_Angeles`).\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
+        "description": "Updates only the fields present in the request body. This is a true partial update (JSON Merge Patch\nsemantics), unlike `PUT /portal/event/{Id}` which replaces the whole record.\n\n**Every field is a plain value in the JSON — never a `{ \"isSet\": ..., \"value\": ... }` wrapper.** That shape\nonly exists internally to tell \"omitted\" apart from \"sent as null\"; sending it literally as JSON will fail to\ndeserialize. For example, to rename an event and touch nothing else:\n```json\n{\n  \"title\": \"Annual Tech Conference 2026\"\n}\n```\n\n- **Omit a field** to leave it completely unchanged.\n- **Send a field with a value** to set/replace it.\n- **Send a field as explicit `null`** to clear it, where the event allows it (e.g. `description`, `endDate`,\n  `doorOpenDate`, `maximumGuests`, `parentEventId`, `hostName`). Fields an event can never be without —\n  `title`, `startDate`, `typeId`, `ticketCurrency`, `isRegQuestionEnable`, `isVenueHidden` — reject an\n  explicit `null` with a validation error instead of silently ignoring it.\n- At least one field must be sent, otherwise `400` (`NO_FIELDS_TO_UPDATE`).\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- `title` is limited to 200 characters.\n- The **Validation** rules below apply to the fields you send; `endDate` before `startDate` is checked against the\n  event as it will be stored, so sending only one of them is compared with the other's current value.\n- The event's status, ticketing and email-notification settings are not changed here — use\n  `POST /portal/event/{Id}/publish` to publish.\n- When the event is published, ticketed and its `title` or `description` changes, the ticketing store is\n  updated too.\n- The response is the whole event after the update.\n\n**`Notify`:** when `true`, the event's guests are sent an update notification about the change. The host name on\nthe notification is the organization owner's.\n\n**Validation** (nothing is written when a rule fails):\n- A property the request does not define → `400`.\n- `TypeId` that is not an event type from `GET /portal/event/types` → `404`.\n- A negative `MaximumGuests` or `AdditionalGuestLimit` → `400`.\n- `EndDate` before `StartDate` → `400`.\n- `ParentEventId` that is the event itself or one of its sub-events → `400`; an event of another organization → `404`.\n\n**Event types (`TypeId`):** send the `Id` of an event type returned by `GET /portal/event/types`\n(e.g. Invite only — `INVITEONLY`, Open invite — `OPENINVITE`). Event types are the same for every organization.\n\n**Dates:** `StartDate`, `EndDate` and `DoorOpenDate` are local times in the event's `EventTimeZone`\n(an IANA name such as `America/Los_Angeles`).\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
         "operationId": "AeonPassEventAPIEndPointsEventsPortalPortalPatchEventEndPoint",
         "parameters": [
           {
@@ -143,7 +143,7 @@
           "Portal"
         ],
         "summary": "Update an event.",
-        "description": "Updates an event of the API key's organization.\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- `Title` (up to 200 characters), `StartDate` and `TypeId` are required.\n- Text fields sent as `null` (or left out) keep their current value. All other fields — dates, numbers,\n  booleans and `ParentEventId` — are always replaced, so leaving one out clears it. Send the current values\n  (from `GET /portal/event/{Id}`) for anything you do not want to change. `TicketCurrency` is reset to `USD`\n  when left out.\n- When the event is published, ticketed and its `Title` or `Description` changes, the ticketing store is\n  updated too.\n\n**`Notify`:** when `true`, the event's guests are sent an update notification about the change. The host name on\nthe notification is the organization owner's.\n\n**Validation** (nothing is written when a rule fails):\n- A property the request does not define → `400`.\n- `TypeId` that is not one of the event types below → `404`.\n- A negative `MaximumGuests` or `AdditionalGuestLimit` → `400`.\n- `EndDate` before `StartDate` → `400`.\n- `ParentEventId` that is the event itself or one of its sub-events → `400`; an event of another organization → `404`.\n\n**Event types (`TypeId`):**\n| `TypeId` | Type |\n|----------|------|\n| `55b7d47c-9c95-43ce-94ca-f103b819de3a` | Invite only (`INVITEONLY`) |\n| `fbe6aba3-f2d9-4c6c-a358-cab441641b06` | Open invite (`OPENINVITE`) |\n\n**Dates:** `StartDate`, `EndDate` and `DoorOpenDate` are local times in the event's `EventTimeZone`\n(an IANA name such as `America/Los_Angeles`).\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
+        "description": "Updates an event of the API key's organization.\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- `Title` (up to 200 characters), `StartDate` and `TypeId` are required.\n- Text fields sent as `null` (or left out) keep their current value. All other fields — dates, numbers,\n  booleans and `ParentEventId` — are always replaced, so leaving one out clears it. Send the current values\n  (from `GET /portal/event/{Id}`) for anything you do not want to change. `TicketCurrency` is reset to `USD`\n  when left out.\n- When the event is published, ticketed and its `Title` or `Description` changes, the ticketing store is\n  updated too.\n\n**`Notify`:** when `true`, the event's guests are sent an update notification about the change. The host name on\nthe notification is the organization owner's.\n\n**Validation** (nothing is written when a rule fails):\n- A property the request does not define → `400`.\n- `TypeId` that is not an event type from `GET /portal/event/types` → `404`.\n- A negative `MaximumGuests` or `AdditionalGuestLimit` → `400`.\n- `EndDate` before `StartDate` → `400`.\n- `ParentEventId` that is the event itself or one of its sub-events → `400`; an event of another organization → `404`.\n\n**Event types (`TypeId`):** send the `Id` of an event type returned by `GET /portal/event/types`\n(e.g. Invite only — `INVITEONLY`, Open invite — `OPENINVITE`). Event types are the same for every organization.\n\n**Dates:** `StartDate`, `EndDate` and `DoorOpenDate` are local times in the event's `EventTimeZone`\n(an IANA name such as `America/Los_Angeles`).\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
         "operationId": "AeonPassEventAPIEndPointsEventsPortalPortalUpdateEventEndPoint",
         "parameters": [
           {
@@ -247,7 +247,7 @@
           "Portal"
         ],
         "summary": "Update an event's invitee settings.",
-        "description": "Updates the invitee settings of an event of the API key's organization: its type, guest limit and the number\nof additional guests each guest may bring. Nothing else on the event changes.\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- `TypeId` is required.\n- `MaximumGuests` and `AdditionalGuestLimit` are written as sent; leaving one out clears it (no limit).\n- A property the request does not define → `400`; an unknown `TypeId` → `404`; a negative limit → `400`.\n  Nothing is written when a rule fails.\n\n**Event types (`TypeId`):**\n| `TypeId` | Type |\n|----------|------|\n| `55b7d47c-9c95-43ce-94ca-f103b819de3a` | Invite only (`INVITEONLY`) |\n| `fbe6aba3-f2d9-4c6c-a358-cab441641b06` | Open invite (`OPENINVITE`) |\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
+        "description": "Updates the invitee settings of an event of the API key's organization: its type, guest limit and the number\nof additional guests each guest may bring. Nothing else on the event changes.\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- `TypeId` is required.\n- `MaximumGuests` and `AdditionalGuestLimit` are written as sent; leaving one out clears it (no limit).\n- A property the request does not define → `400`; a `TypeId` that is not an event type from `GET /portal/event/types` → `404`; a negative limit → `400`.\n  Nothing is written when a rule fails.\n\n**Event types (`TypeId`):** send the `Id` of an event type returned by `GET /portal/event/types`\n(e.g. Invite only — `INVITEONLY`, Open invite — `OPENINVITE`). Event types are the same for every organization.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
         "operationId": "AeonPassEventAPIEndPointsEventsPortalPortalUpdateEventInviteeEndPoint",
         "parameters": [
           {
@@ -372,12 +372,12 @@
       }
     },
     "/api/portal/guest/{eventId}/list": {
-      "post": {
+      "get": {
         "tags": [
           "Portal"
         ],
         "summary": "Fetch list of guests.",
-        "description": "Returns a paginated list of guests for an event. Supports filtering, sorting, and free-text search.\n\n**Authentication:** Include `X-API-KEY` in the request header. `EventId` is required in the route param.\n\n**Filtering Options:**\n- `GroupId` — Scope results to guests in a specific guest group. Valid group IDs can be retrieved via `GET /portal/guest-group/{OrganizationId}/list`.\n- `DesignMappingId` — Scope results to guests whose invitation uses a specific design.\n- `SearchTerm` — Free-text search across guest name, email, and phone.\n- `SortBy` / `SortDirection` (`asc` or `desc`) — Order the results.\n\n**Response shape:**\n```json\n{\n  \"data\": [ ... ],\n  \"pagination\": {\n    \"totalCount\": 100,\n    \"page\": 1,\n    \"pageSize\": 20,\n    \"totalPages\": 5\n  }\n}\n```\nIf `PageNo`/`PageSize` are omitted, they default to `1`/`100` for the purposes of computing `pagination`.",
+        "description": "Returns a paginated list of guests for an event. Supports filtering, sorting, and free-text search.\n\n**Authentication:** Include `X-API-KEY` in the request header. `EventId` is required in the route param; all other parameters are passed as query string values.\n\n**Filtering Options:**\n- `GroupId` — Scope results to guests in a specific guest group. Valid group IDs can be retrieved via `GET /portal/guest-group/{OrganizationId}/list`.\n- `DesignMappingId` — Scope results to guests whose invitation uses a specific design.\n- `SearchTerm` — Free-text search across guest name, email, and phone.\n- `SortBy` / `SortDirection` (`asc` or `desc`) — Order the results.\n- `CustomFields` — A JSON object string, keyed by custom field definition id (see AeonPassGlobal's `GET /portal/custom-fields?entityType=GUEST`), e.g. `{\"<definitionId>\":\"value\"}`. A guest matches only if its custom field values contain every key/value pair given here (AND across keys, exact-value match per key). Omit entirely to skip this filter. Sent as a plain query string parameter since a Dictionary can't bind directly from a GET request.\n\n**Response shape:**\n```json\n{\n  \"data\": [ ... ],\n  \"pagination\": {\n    \"totalCount\": 100,\n    \"page\": 1,\n    \"pageSize\": 20,\n    \"totalPages\": 5\n  }\n}\n```\nIf `PageNo`/`PageSize` are omitted, they default to `1`/`100` for the purposes of computing `pagination`.",
         "operationId": "AeonPassEventAPIEndPointsGuestsPortalPortalListGuestEndPoint",
         "parameters": [
           {
@@ -388,21 +388,76 @@
               "type": "string",
               "format": "guid"
             }
-          }
-        ],
-        "requestBody": {
-          "x-name": "PortalListGuestEndPointRequest",
-          "description": "",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PortalListGuestEndPointRequest"
-              }
+          },
+          {
+            "name": "designMappingId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "guid",
+              "nullable": true
             }
           },
-          "required": true,
-          "x-position": 1
-        },
+          {
+            "name": "pageNo",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "searchTerm",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "groupId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "guid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "sortDirection",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "customFields",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success",
@@ -474,7 +529,7 @@
           "Portal"
         ],
         "summary": "Fetch a single guest, including their custom field values.",
-        "description": "Fetches one guest's full details by id.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Request**\n\n| Field | Required | Type | Notes |\n|---|---|---|---|\n| `Id` | Yes (route) | guid | The guest to fetch. |\n| `InvitationId` | No (query) | guid | Scope the returned `Invitation` to a specific one, for a guest with more than one. Defaults to the guest's current invitation. |\n\n**Response `200`** — the guest (`PortalGetGuestEndPointResponse`), including `CustomFields`:\nan object keyed by custom field definition id (see AeonPassGlobal's\n`GET /portal/custom-fields?entityType=GUEST`), e.g. `{\"<definitionId>\": \"Vegan\"}`. Empty\nor omitted if the guest has no custom field values set.\n\n**`404`** if `Id` doesn't exist.",
+        "description": "Fetches one guest's full details by id.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Request**\n\n| Field | Required | Type | Notes |\n|---|---|---|---|\n| `Id` | Yes (route) | guid | The guest to fetch. |\n| `InvitationId` | No (query) | guid | Narrow `Invitations` to that one invitation. Omit to return all of the guest's active invitations. |\n\n**Response `200`** — the guest (`PortalGetGuestEndPointResponse`), including `Invitations` (the guest's\nactive invitations; empty if none match) and `CustomFields`:\nan object keyed by custom field definition id (see AeonPassGlobal's\n`GET /portal/custom-fields?entityType=GUEST`), e.g. `{\"<definitionId>\": \"Vegan\"}`. Empty\nor omitted if the guest has no custom field values set.\n\n**`404`** if `Id` doesn't exist.",
         "operationId": "AeonPassEventAPIEndPointsGuestsPortalPortalGetGuestEndPoint",
         "parameters": [
           {
@@ -1245,13 +1300,11 @@
             "type": "string",
             "nullable": true
           },
-          "invitation": {
-            "nullable": true,
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/InvitationDto"
-              }
-            ]
+          "invitations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InvitationDto"
+            }
           },
           "isExternalTicket": {
             "type": "boolean"
@@ -1497,44 +1550,6 @@
           "totalPages": {
             "type": "integer",
             "format": "int32"
-          }
-        }
-      },
-      "PortalListGuestEndPointRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "designMappingId": {
-            "type": "string",
-            "format": "guid",
-            "nullable": true
-          },
-          "pageNo": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "pageSize": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "searchTerm": {
-            "type": "string",
-            "nullable": true
-          },
-          "groupId": {
-            "type": "string",
-            "format": "guid",
-            "nullable": true
-          },
-          "sortBy": {
-            "type": "string",
-            "nullable": true
-          },
-          "sortDirection": {
-            "type": "string",
-            "nullable": true
           }
         }
       },
@@ -2040,7 +2055,7 @@
           },
           "typeId": {
             "type": "string",
-            "description": "The event type: 55b7d47c-9c95-43ce-94ca-f103b819de3a (Invite only) or fbe6aba3-f2d9-4c6c-a358-cab441641b06 (Open invite).",
+            "description": "The event type ID — one of the event types from GET /portal/event/types.",
             "format": "guid"
           },
           "typeName": {
@@ -2160,7 +2175,7 @@
           },
           "typeId": {
             "type": "string",
-            "description": "Optional; defaults to Invite only. 55b7d47c-9c95-43ce-94ca-f103b819de3a (Invite only) or fbe6aba3-f2d9-4c6c-a358-cab441641b06 (Open invite).",
+            "description": "Optional; defaults to Invite only (INVITEONLY). An event type Id from GET /portal/event/types.",
             "format": "guid",
             "nullable": true
           },
@@ -2413,7 +2428,7 @@
           },
           "typeId": {
             "type": "string",
-            "description": "The event type: 55b7d47c-9c95-43ce-94ca-f103b819de3a (Invite only) or fbe6aba3-f2d9-4c6c-a358-cab441641b06 (Open invite).",
+            "description": "The event type ID — one of the event types from GET /portal/event/types.",
             "format": "guid"
           },
           "typeName": {
@@ -2556,7 +2571,7 @@
             ]
           },
           "typeId": {
-            "description": "55b7d47c-9c95-43ce-94ca-f103b819de3a (Invite only) or fbe6aba3-f2d9-4c6c-a358-cab441641b06 (Open invite); cannot be null.",
+            "description": "An event type Id from GET /portal/event/types; cannot be null.",
             "oneOf": [
               {
                 "$ref": "#/components/schemas/PatchFieldOfNullableOfGuid"
@@ -2760,7 +2775,7 @@
           },
           "typeId": {
             "type": "string",
-            "description": "The event type: 55b7d47c-9c95-43ce-94ca-f103b819de3a (Invite only) or fbe6aba3-f2d9-4c6c-a358-cab441641b06 (Open invite).",
+            "description": "The event type ID — one of the event types from GET /portal/event/types.",
             "format": "guid"
           },
           "typeName": {
@@ -2881,7 +2896,7 @@
           },
           "typeId": {
             "type": "string",
-            "description": "Required. 55b7d47c-9c95-43ce-94ca-f103b819de3a (Invite only) or fbe6aba3-f2d9-4c6c-a358-cab441641b06 (Open invite).",
+            "description": "Required. An event type Id from GET /portal/event/types.",
             "format": "guid",
             "minLength": 1
           },
@@ -3016,7 +3031,7 @@
           },
           "typeId": {
             "type": "string",
-            "description": "The event type: 55b7d47c-9c95-43ce-94ca-f103b819de3a (Invite only) or fbe6aba3-f2d9-4c6c-a358-cab441641b06 (Open invite).",
+            "description": "The event type ID — one of the event types from GET /portal/event/types.",
             "format": "guid"
           },
           "typeName": {
@@ -3079,7 +3094,7 @@
         "properties": {
           "typeId": {
             "type": "string",
-            "description": "Required. 55b7d47c-9c95-43ce-94ca-f103b819de3a (Invite only) or fbe6aba3-f2d9-4c6c-a358-cab441641b06 (Open invite).",
+            "description": "Required. An event type Id from GET /portal/event/types.",
             "format": "guid",
             "minLength": 1
           },

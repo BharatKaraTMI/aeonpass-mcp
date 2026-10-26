@@ -20,7 +20,7 @@ parameter, not a module-level env read, so each transport decides where it
 comes from.
 
 ```
-src/api.ts     createClient(apiKey) → all 56 API calls bound to that key
+src/api.ts     createClient(apiKey) → all 57 API calls bound to that key
 src/realtime.ts SignalR chat subscriptions, keyed by sha256(apiKey) + scope
 src/server.ts  createServer(client, opts) → registers the tools
 src/app.ts     Hono app; reads X-API-KEY per request
@@ -45,7 +45,7 @@ report a dead connection.
 
 ## Logging
 
-`createClient` wraps all 56 methods and emits one JSON line per call to
+`createClient` wraps all 57 methods and emits one JSON line per call to
 **stderr** — stdout belongs to the stdio transport's JSON-RPC frames, so writing
 there corrupts the protocol.
 
@@ -93,7 +93,7 @@ All tools call the Aeon Pass gateway at `https://apv2-gatewayapp-prod-westus3.az
 **Techaeons**
 | Tool | Description |
 |------|-------------|
-| `get_techaeon` | Get a single techaeon by ID |
+| `get_techaeon` | Get a single techaeon by ID, with its privileges |
 | `list_techaeons` | List/search/filter techaeons (paginated) |
 | `create_techaeon` | Create a techaeon and assign to a holder |
 | `update_techaeon_status` | Change status (CREATED/ISSUED/TRANSFERRED/CANCELLED/CONSUMED) |
@@ -113,8 +113,9 @@ All tools call the Aeon Pass gateway at `https://apv2-gatewayapp-prod-westus3.az
 | `update_event_details` | Replace the HTML details only |
 | `update_event_invitee` | Set type + guest limits only (omitted limit = cleared) |
 | `publish_event` | Draft → Published |
-| `list_guests` | List/search guests for an event (paginated) |
-| `get_guest` | Get one guest, including custom field values |
+| `list_event_types` | The event types a `typeId` can be (Global API, not paged) |
+| `list_guests` | List/search guests for an event (paginated, custom field filter) |
+| `get_guest` | Get one guest, with `invitations[]` and custom field values |
 | `create_guest` | Add a guest to an event, optionally issue invitation |
 | `update_guest` | Full update of guest details or invitation |
 | `patch_guest` | Partial update — only the fields you pass are changed |
@@ -156,6 +157,16 @@ Event writes (dev only, 21 Oct 2026). Easy to get wrong:
   old invitee bug still 404s and needs a DB repair.
 - Event writes reach `list_events` after **~2–60 s** (guests ~1 s); a
   sub-event never appears there.
+- **`typeId` comes from `list_event_types`** (`GET /event/types`, Global API,
+  dev and stage since 26 Oct). It returns a bare array of `{ id, typeName,
+  typeCode }`, the same for every organization. Today that is `INVITEONLY` and
+  `OPENINVITE`; `EVENT_TYPES` in `api.ts` keeps those two ids for descriptions
+  only.
+- **`get_guest` returns `invitations[]`** (dev and stage, 26 Oct), not the old
+  single nullable `invitation`, which is gone from the response. Without
+  `invitationId` it lists every active invitation; with it, just that one. This
+  replaces the old behavior where a call without `invitationId` returned
+  `invitation: null`. `list_guests` rows still carry a single `invitation`.
 
 **Events & invitations by person** (Global API, dev only — see rollout table)
 | Tool | Description |
@@ -226,7 +237,7 @@ types are the C# wrapper leaking into the schema.
 **Contacts**
 | Tool | Description |
 |------|-------------|
-| `list_contacts` | List/search organization contacts (paginated) |
+| `list_contacts` | List/search organization contacts (paginated, custom field filter) |
 | `get_contact` | Get a single contact by ID |
 | `create_contact` | Create a new contact |
 | `update_contact` | Update contact details |
@@ -243,6 +254,19 @@ object`. `list_contacts` always returns `customFields: null`, and
 `upload_contacts` silently ignores the field. A field just set `ACTIVE` can be
 refused as `CUSTOM_FIELD_VALUE_INVALID` "not a recognized custom field" for a
 few seconds — a cache, not a bad id. All verified on dev 21 Oct 2026.
+
+**Filtering by custom field** (dev and stage, 23 Oct 2026). `list_guests` and
+`list_contacts` take `customFields` as a *filter*: one JSON-encoded query value,
+keyed by definition `id`. A record matches only if it holds every pair: an exact,
+**case-sensitive** match (`"blue"` misses `"Blue"`), ANDed across keys and with
+`searchTerm` and the other filters. `{}` means no filter. Bad JSON, or a key
+that is a `fieldKey` rather than an id, is `400 CustomFields must be a valid JSON
+object`. An unknown id is an empty page, not an error. The rows still carry no
+values, so read them with `get_guest` / `get_contact`. All verified on dev.
+
+To make that query parameter possible, **`list_guests` became a `GET`**. It had
+been `POST /guest/{eventId}/list` with a JSON body, and that now returns `405`,
+so the old client fails on dev and stage. Prod still takes only the POST.
 
 `upload_contacts` became **atomic** in Oct 2026 (dev and stage; not prod yet): if any row fails
 validation, no contacts are saved, and the failures come back in `errorItems`
@@ -456,10 +480,10 @@ stage while the published spec still described the old optional field. So the
 drift check passing does not mean there is nothing to pick up; check the
 environment's own swagger when chasing a specific change.
 
-> **`specs/message.json`, `specs/organization.json`, `specs/global.json` and
-> `specs/event.json` are gateway snapshots, not published ones.** All were
-> regenerated from the **dev** swagger in Oct 2026 (global, organization and
-> event on 21 Oct) — filtered to `/api/portal` and the schemas those paths reach, which is
+> **All five `specs/*.json` are gateway snapshots, not published ones.** All were
+> regenerated from the **dev** swagger in Oct 2026 (message on 21 Oct;
+> organization and techaeon on 23 Oct; event and global from stage on 26 Oct,
+> identical to dev that day) — filtered to `/api/portal` and the schemas those paths reach, which is
 > the same shape the publisher serves, with `servers[0].url` rewritten to prod
 > and `example` blocks stripped the way `check:api` stores every other snapshot.
 >
@@ -471,31 +495,45 @@ environment's own swagger when chasing a specific change.
 >   `senderApiKeyName`, and the per-key read state in the `mark-read` and
 >   `send-message` descriptions.
 > - **organization** — the five new `upload-list` row fields and its
->   all-or-nothing behavior, and contact `customFields`.
-> - **event** — the six event write operations (`- event: GONE …`).
-> - **global** — the six event/invitation list operations. Because the
+>   all-or-nothing behavior, contact `customFields`, and the `customFields`
+>   filter on `contact/list`.
+> - **event** — the six event write operations (`- event: GONE …`), and the
+>   guest list moving from POST to GET (`+ event: NEW POST …/list`,
+>   `- event: GONE GET …/list`, `! UNIMPLEMENTED POST …/list` — all the same lag).
+> - **event** (also) — `get_guest`'s `invitation` → `invitations[]`, and the
+>   event write descriptions pointing at `/event/types` (26 Oct).
+> - **global** — `GET /event/types` (26 Oct) and the six event/invitation list operations. Because the
 >   snapshot has them and the publisher does not, `check:api` prints them as
 >   `- global: GONE …`; that is the publisher lagging, not a removal.
+> - **techaeon** — `privileges` on the get/list responses (`PortalTechaeonDto`).
 >
-> Those are why `check:api` reports `~ message:`, `~ organization: same
-> operations, but the spec body changed`, and the six `- global: GONE` lines. **Do not clear those lines with
+> Those are why `check:api` reports `~` for every spec except global, and the
+> `GONE` / `NEW` / `UNIMPLEMENTED` lines above. **Do not clear those lines with
 > `check:api -- --write`** — `--write` rewrites *every* snapshot from the
-> published source, so it would revert all four to the older contract. To refresh
-> techaeon, run `--write` and then `git checkout` the four
-> gateway snapshots back. Once the publisher catches up, `--write` is safe again
-> and the lines go away on their own.
+> published source, so it would revert all five to the older contract. Refresh
+> from the gateway instead: fetch `swagger/docs/v1/{name}API`, filter it as
+> above, and diff it against the snapshot. Once the publisher catches up,
+> `--write` is safe again and the lines go away on their own.
 >
 > `src/api.ts` `BASE_URL` points at the **dev** gateway on this branch. Rollout
-> as of 7 Oct 2026, from each gateway's own swagger:
+> as of 23 Oct 2026, from each gateway's own swagger (stage also exercised
+> end to end that day). Stage now serves every operation in `COVERED`:
 >
 > | Change | dev | stage | prod |
 > |---|---|---|---|
 > | Custom fields API, `GET /guest/{id}`, guest `customFields` | ✓ | ✓ | ✓ |
 > | `upload-list` new row fields + all-or-nothing | ✓ | ✓ | — |
-> | API-key identity (`senderType`, per-key read state) | ✓ | — | — |
+> | API-key identity (`senderType`, per-key read state) | ✓ | ✓ | — |
 > | Contact `customFields` (checked 21 Oct) | ✓ | ✓ | — |
-> | Event/invitation lists by person (checked 21 Oct) | ✓ | — | — |
-> | Event create/update/patch/details/invitee/publish (21 Oct) | ✓ | — | — |
+> | Event/invitation lists by person | ✓ | ✓ | — |
+> | Event create/update/patch/details/invitee/publish | ✓ | ✓ | — |
+> | Guest list POST → GET + `customFields` filter (23 Oct) | ✓ | ✓ | — |
+> | Contact list `customFields` filter (23 Oct) | ✓ | ✓ | — |
+> | Techaeon `privileges` on get/list (23 Oct) | ✓ | ✓ | — |
+> | `GET /event/types`; `get_guest` `invitation` → `invitations[]` (26 Oct) | ✓ | ✓ | — |
+>
+> Prod's guest list is still POST-only, so `list_guests` as written will not
+> work there.
 >
 > Pointed at prod, the new upload fields would be ignored and the chat tool
 > descriptions would overstate what prod does. Re-check before switching.

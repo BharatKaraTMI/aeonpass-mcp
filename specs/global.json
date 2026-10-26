@@ -898,6 +898,48 @@
         ]
       }
     },
+    "/api/portal/event/types": {
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "List the event types.",
+        "description": "Returns every event type. Use an event type's `Id` as the `TypeId` when creating or updating an event\n(`POST /portal/event`, `PUT /portal/event/{Id}`, `PATCH /portal/event/{Id}`,\n`PUT /portal/event/{Id}/invitee`).\n\nEvent types are master data — the same for every organization — so the list does not depend on the\nAPI key's organization. The IDs are stable and safe to cache.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassGlobalAPIEndPointsEventTypePortalPortalListEventTypeEndPoint",
+        "responses": {
+          "200": {
+            "description": "Every event type.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PortalListEventTypeEndPointResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
     "/api/portal/invitation/list/contact/{contactId}": {
       "get": {
         "tags": [
@@ -1510,6 +1552,26 @@
           2,
           3
         ]
+      },
+      "PortalListEventTypeEndPointResponse": {
+        "type": "object",
+        "description": "An event type. Send its Id as the TypeId of an event when creating or updating it.",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The event type ID — the value to send as an event's TypeId.",
+            "format": "guid"
+          },
+          "typeName": {
+            "type": "string",
+            "description": "The display name of the event type."
+          },
+          "typeCode": {
+            "type": "string",
+            "description": "A stable code for the event type, e.g. INVITEONLY or OPENINVITE."
+          }
+        }
       },
       "PortalPagedResponseOfPortalListEventsEndPointResponse": {
         "type": "object",

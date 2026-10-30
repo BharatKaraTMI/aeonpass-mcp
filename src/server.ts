@@ -192,11 +192,178 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
     })
   );
 
+  // ── Techaeon designs ──
+  //
+  // Designs are reusable and belong to the organization. Upload an image →
+  // create a design → set it as an event's design with create_design_mapping →
+  // that mapping id is the event's designMappingId, which invitations use.
+
+  const designFields = {
+    imageUrl: z.string().describe("Required. A url returned by upload_techaeon_design_images"),
+    shapeId: z.string().optional().describe("Shape GUID from list_design_shapes"),
+    colorId: z.string().optional().describe("Color GUID from list_design_colors"),
+  };
+  const designRow = "{ id, imageUrl, shapeId, shapeName, pathValue (SVG path), colorId, colorName, rgbValue (a JSON string like {\"r\":218,\"g\":184,\"b\":95}) }";
+
+  server.tool(
+    "list_techaeon_designs",
+    `List your organization's active, reusable techaeon designs — the artwork invitations and tickets are rendered with. A design belongs to the organization, not to an event, and can be set on any of its events. Returns a bare array (not paginated) of ${designRow}.`,
+    {},
+    async () => ({
+      content: [{ type: "text", text: JSON.stringify(await client.listTechaeonDesigns(), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "get_techaeon_design",
+    `Get one techaeon design: ${designRow}. To see an event's design, pass the designId from get_event. A design of another organization, or a deleted one, is 404.`,
+    { id: z.string().describe("Design GUID") },
+    async ({ id }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.getTechaeonDesign(id), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "upload_techaeon_design_images",
+    "Upload images to use as techaeon design artwork. Returns [{ url, fileName, contentType }]; pass a url as imageUrl to create_techaeon_design or update_techaeon_design. Uploading alone creates no design. Images only — JPEG, PNG, GIF, WebP, BMP, TIFF, ICO, AVIF, HEIC/HEIF, JPEG XL, JPEG 2000 or SVG (no scripts or active content) — at most 10 MB each. The format is detected from the content and the file name's extension must match it: an empty or non-image file, or an image under another format's extension, is 400 INVALID_IMAGE_FILE, and one over 10 MB is 400 IMAGE_FILE_TOO_LARGE. If any file is rejected, none is uploaded. Files are base64-encoded in the request, so keep them small.",
+    {
+      files: z
+        .array(
+          z.object({
+            fileName: z.string().describe("Original file name, e.g. gala-pass.png"),
+            fileType: z.string().optional().describe("MIME type, e.g. image/png"),
+            contentBase64: z.string().describe("Base64-encoded file content"),
+          })
+        )
+        .describe("Images to upload — at least one"),
+    },
+    async (params) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.uploadDesignImages(params), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "create_techaeon_design",
+    `Create a reusable techaeon design in your organization from an uploaded image, optionally with a shape and color. An unknown shapeId or colorId is 404. Creating it does not put it on any event — set it as an event's design with create_design_mapping, passing the returned id as designId (a design made moments ago can take a few seconds to be accepted there). Returns ${designRow}.`,
+    designFields,
+    async (params) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.createTechaeonDesign(params), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "update_techaeon_design",
+    "Replace a techaeon design's image, shape and color. CAREFUL: a full replace — shapeId or colorId left out is CLEARED, so resend the current ones from get_techaeon_design to keep them. The change applies to EVERY event using the design, and a new imageUrl regenerates those events' tickets. To change the design on one event only, use update_design_mapping instead.",
+    { id: z.string().describe("Design GUID"), ...designFields },
+    async ({ id, ...params }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.updateTechaeonDesign(id, params), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "delete_techaeon_design",
+    "Soft-delete a techaeon design. It can no longer be set on events, and every event using it stops showing it as its design within a few seconds — its mappings drop out of list_design_mappings and get_design_mapping returns 404. Those events then have no design (get_event returns null): give them one with update_design_mapping on the same mapping, or create_design_mapping. Returns 204 No Content on success.",
+    { id: z.string().describe("Design GUID") },
+    async ({ id }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.deleteTechaeonDesign(id), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "list_design_colors",
+    "List the colors a techaeon design can use: [{ id, colorName, rgbValue }], where rgbValue is a JSON string like {\"r\":218,\"g\":184,\"b\":95}. Master data — the same for every organization.",
+    {},
+    async () => ({
+      content: [{ type: "text", text: JSON.stringify(await client.listDesignColors(), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "get_design_color",
+    "Get one techaeon design color: { id, colorName, rgbValue }.",
+    { id: z.string().describe("Color GUID") },
+    async ({ id }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.getDesignColor(id), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "list_design_shapes",
+    "List the shapes a techaeon design can use: [{ id, shapeName, pathValue }], where pathValue is the shape's SVG path. Master data — the same for every organization.",
+    {},
+    async () => ({
+      content: [{ type: "text", text: JSON.stringify(await client.listDesignShapes(), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "get_design_shape",
+    "Get one techaeon design shape: { id, shapeName, pathValue (SVG path) }.",
+    { id: z.string().describe("Shape GUID") },
+    async ({ id }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.getDesignShape(id), null, 2) }],
+    })
+  );
+
+  // ── Design mappings ──
+
+  server.tool(
+    "create_design_mapping",
+    "Set an event's design: put one of your organization's reusable designs on an event, after creating the event. Its invitations and tickets then use it, and invitations created without a designMappingId default to it. Returns { id, designId, eventId } — that id is the event's designMappingId (also on get_event), used by create_guest, create_invitation and update_invitation. An event has exactly ONE design: if it already has one (designMappingId on get_event), this is 400 EVENT_DESIGN_ALREADY_SET and nothing is written — change it with update_design_mapping, or remove it with delete_design_mapping and set a new one. A design created moments ago may take a few seconds to be accepted.",
+    {
+      designId: z.string().describe("Design GUID from list_techaeon_designs"),
+      eventId: z.string().describe("Event GUID"),
+    },
+    async (params) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.createDesignMapping(params), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "get_design_mapping",
+    "Get an event's design mapping: { id, designId, eventId }. Pass the event's designMappingId from get_event; for the design's image, shape and color, call get_techaeon_design with the returned designId. A removed mapping, or one whose design was deleted, is 404.",
+    { id: z.string().describe("Design mapping GUID") },
+    async ({ id }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.getDesignMapping(id), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "list_design_mappings",
+    "List an event's design as a list: [{ id, designId, eventId }] — its one active design mapping, or [] when it has none. Mappings whose design was deleted are left out. An event created before the one-design rule may list several, newest first; the first is the event's design (the one get_event reports) — remove the others with delete_design_mapping.",
+    { eventId: z.string().describe("Event GUID") },
+    async ({ eventId }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.listDesignMappings(eventId), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "update_design_mapping",
+    "Change an event's design: switch its design mapping to another of your organization's designs. The mapping stays the event's design (its designMappingId never moves to another mapping), so every invitation using it switches to the new design and its tickets are regenerated. Resending the current designId changes nothing — no write, no ticket regeneration. Only this event changes — to change a design on every event that uses it, use update_techaeon_design. eventId must be the mapping's own event (a mapping cannot be moved: 404); a removed mapping is 404. Also works on a mapping whose design was deleted, to give the event a design again. On an older event that still has several mappings, a design another of them uses is 400 DESIGN_MAPPING_ALREADY_EXIST.",
+    {
+      id: z.string().describe("Design mapping GUID"),
+      eventId: z.string().describe("The mapping's own event GUID"),
+      designId: z.string().describe("New design GUID from list_techaeon_designs"),
+    },
+    async ({ id, ...params }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.updateDesignMapping(id, params), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "delete_design_mapping",
+    "Remove an event's design (soft delete). The event then has no design: get_event returns designMappingId and designId null, and new invitations created without a designMappingId get none, until create_design_mapping sets one again. Existing invitations keep the removed mapping. The reusable design itself is kept for other events. To swap designs, use update_design_mapping instead. Returns 204 No Content on success.",
+    { id: z.string().describe("Design mapping GUID") },
+    async ({ id }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.deleteDesignMapping(id), null, 2) }],
+    })
+  );
+
   // ── Event Tools ──
 
   server.tool(
     "get_event",
-    "Get public details of an event by ID: title, dates, status, type, venue/design reference IDs, ticketing status",
+    "Get public details of an event by ID: title, dates, status, type, venue reference IDs, ticketing status, and its design — designMappingId and designId, its one active design mapping with an active design, or null when it has none (not set yet, removed, or its design was deleted). Set it with create_design_mapping, change it with update_design_mapping(designMappingId), see its image with get_techaeon_design(designId).",
     { id: z.string().describe("Event GUID") },
     async ({ id }) => ({
       content: [{ type: "text", text: JSON.stringify(await client.getEvent(id), null, 2) }],
@@ -242,7 +409,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "create_event",
-    "Create an event in your organization. It is created as a DRAFT (statusName 'Draft') and stays out of list_events status=UPCOMING/HISTORY until published with publish_event. Returns the created event; save its id. typeId defaults to Invite only. The event has no invitation design, which create_guest handles by issuing invitations without one." + writeRules,
+    "Create an event in your organization. It is created as a DRAFT (statusName 'Draft') and stays out of list_events status=UPCOMING/HISTORY until published with publish_event. Returns the created event; save its id. typeId defaults to Invite only. The event has no design yet: set one afterwards with create_design_mapping (create_guest still issues invitations without one)." + writeRules,
     {
       title: z.string().describe("Required, up to 200 characters"),
       startDate: localDate("Required. When the event starts"),
@@ -473,7 +640,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "create_guest",
-    "Create a new guest for an event and optionally issue an invitation (status CREATED — nothing is sent until send_invite). Pass invite=true, or any invitation* field, to issue one; the design defaults to the event's own, and an event made with create_event has none, which is fine. groupId is required — use list_guest_groups to find valid IDs. customFields is keyed by custom field DEFINITION ID (from list_custom_fields with entityType GUEST), not by fieldKey; every ACTIVE mandatory guest field must be included, or omit customFields entirely to set none.",
+    "Create a new guest for an event and optionally issue an invitation (status CREATED — nothing is sent until send_invite). Pass invite=true, or any invitation* field, to issue one; the design defaults to the event's own, and an event made with create_event has none, which is fine. A guest created without one can get it later with create_invitation. groupId is required — use list_guest_groups to find valid IDs. customFields is keyed by custom field DEFINITION ID (from list_custom_fields with entityType GUEST), not by fieldKey; every ACTIVE mandatory guest field must be included, or omit customFields entirely to set none.",
     {
       eventId: z.string().describe("Event GUID"),
       firstName: z.string().describe("Guest first name (required)"),
@@ -508,7 +675,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "update_guest",
-    "Update an existing guest's details or invitation. groupId is required. This replaces the guest record, EXCEPT customFields: those are merged by definition id — only the keys you send are validated and written, and omitting customFields leaves every existing value untouched.",
+    "Update an existing guest's details or invitation. groupId is required. This replaces the guest record, EXCEPT customFields: those are merged by definition id — only the keys you send are validated and written, and omitting customFields leaves every existing value untouched. Pass invitationId to change the guest's existing invitation too; its design and status are kept unless you send new ones. To change only the invitation, use update_invitation.",
     {
       id: z.string().describe("Guest GUID"),
       eventId: z.string().describe("Event GUID"),
@@ -521,21 +688,20 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
       isUpdateAllEvent: z.boolean().optional(),
       techaeonCode: z.string().optional(),
       guestCode: z.string().optional(),
-      invitationId: z.string().optional().describe("Invitation GUID to update"),
-      invitationDesignMappingId: z.string().optional(),
+      invitationId: z.string().optional().describe("The guest's invitation GUID — required to change any invitation* field"),
+      invitationDesignMappingId: z.string().optional().describe("Design mapping GUID from list_design_mappings; omit to keep the current one"),
       invitationGuestPasses: z.number().optional(),
       invitationIsUnlimited: z.boolean().optional(),
-      invitationStatusId: z.string().optional().describe("New invitation status GUID"),
+      invitationStatusId: z.string().optional().describe("New status GUID from list_invitation_statuses; omit to keep the current one"),
       customFields: z
         .record(z.string(), z.unknown())
         .optional()
         .describe("Custom field values keyed by definition id. Merged: keys not sent are left as they are."),
     },
     async ({ id, invitationId, invitationDesignMappingId, invitationGuestPasses, invitationIsUnlimited, invitationStatusId, ...params }) => {
-      const invitation =
-        invitationId && invitationDesignMappingId
-          ? { id: invitationId, designMappingId: invitationDesignMappingId, guestPasses: invitationGuestPasses, isUnlimited: invitationIsUnlimited, statusId: invitationStatusId }
-          : undefined;
+      const invitation = invitationId
+        ? { id: invitationId, designMappingId: invitationDesignMappingId, guestPasses: invitationGuestPasses, isUnlimited: invitationIsUnlimited, statusId: invitationStatusId }
+        : undefined;
       return {
         content: [{ type: "text", text: JSON.stringify(await client.updateGuest(id, { ...params, invitation }), null, 2) }],
       };
@@ -560,7 +726,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
       invitationDesignMappingId: z.string().optional(),
       invitationGuestPasses: z.number().nullable().optional(),
       invitationIsUnlimited: z.boolean().nullable().optional(),
-      invitationStatusId: z.string().optional().describe("New invitation status GUID"),
+      invitationStatusId: z.string().optional().describe("New invitation status GUID from list_invitation_statuses"),
       customFields: z
         .record(z.string(), z.unknown())
         .optional()
@@ -609,6 +775,56 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
     },
     async ({ id, invitationId }) => ({
       content: [{ type: "text", text: JSON.stringify(await client.deleteGuest(id, invitationId), null, 2) }],
+    })
+  );
+
+  // ── Invitations ──
+  //
+  // A guest holds at most one invitation; these manage it without resending
+  // the guest record.
+
+  const invitationEventId = z.string().describe("The guest's own event GUID (required — any other event is a 404)");
+
+  server.tool(
+    "create_invitation",
+    "Give an existing guest who was added without an invitation their invitation. Created with status CREATED and a QR code; nothing is sent until send_invite. A guest already holding one is 400 INVITATION_ALREADY_EXISTS — use update_invitation. Returns the invitation: { id, guestId, eventId, designMappingId, guestPasses, isUnlimited, statusId, statusName, statusCode, isExternalTicket }.",
+    {
+      guestId: z.string().describe("Guest GUID"),
+      eventId: invitationEventId,
+      designMappingId: z
+        .string()
+        .optional()
+        .describe("The event's designMappingId from get_event, or an id from list_design_mappings for this event. Omit to use the event's design, or none if it has no design"),
+      guestPasses: z.number().optional().describe("Passes on the invitation, 0 or more"),
+      isUnlimited: z.boolean().optional().describe("Unlimited passes (default false)"),
+    },
+    async ({ guestId, ...params }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.createInvitation(guestId, params), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "update_invitation",
+    "Update a guest's existing invitation — passes, design or status — without touching the guest. CAREFUL: guestPasses and isUnlimited are REPLACED, so leaving them out clears the passes and sets isUnlimited false; send the current values from get_guest for any you are not changing. designMappingId and statusId left out are kept. Changing the status generates a techaeon for the new status. A guest with no invitation is 404 — use create_invitation. Returns the invitation.",
+    {
+      guestId: z.string().describe("Guest GUID"),
+      eventId: invitationEventId,
+      statusId: z.string().optional().describe("New status GUID from list_invitation_statuses (e.g. the ACCEPTED or DECLINED id); an unknown one is 404"),
+      designMappingId: z.string().optional().describe("Design mapping GUID from list_design_mappings for this event"),
+      guestPasses: z.number().optional().describe("Passes on the invitation, 0 or more — replaces the current value"),
+      isUnlimited: z.boolean().optional().describe("Unlimited passes — replaces the current value"),
+    },
+    async ({ guestId, ...params }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.updateInvitation(guestId, params), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "list_invitation_statuses",
+    "List the invitation statuses: [{ id, statusName, statusCode, displayOrder }] — CREATED, SENT, VIEWED, ACCEPTED, DECLINED, VOIDED, EXPIRED, ADMITTED, CANCELLED, PURCHASED. Pass an id as statusId to update_invitation, or as invitationStatusId to update_guest / patch_guest; guest and invitation reads report statusCode. Not returned in display order — sort by displayOrder to show them. Master data — the same for every organization, stable and not paginated.",
+    {},
+    async () => ({
+      content: [{ type: "text", text: JSON.stringify(await client.listInvitationStatuses(), null, 2) }],
     })
   );
 
@@ -706,7 +922,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "update_contact",
-    "Update an existing contact's details. firstName is required. customFields is merged by definition id — only the keys you send are written, and omitting it leaves every existing value untouched.",
+    "Update an existing contact's details. firstName is required. CAREFUL: this is a full replace of the standard fields — any you leave out (lastName, email, phone, address…) is CLEARED, so send the current values from get_contact for everything you are not changing. customFields is the exception: merged by definition id — only the keys you send are written, and omitting it leaves every existing value untouched. To change only custom field values, use set_contact_custom_fields.",
     {
       id: z.string().describe("Contact GUID"),
       firstName: z.string().describe("Required"),
@@ -728,6 +944,20 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
     },
     async ({ id, ...params }) => ({
       content: [{ type: "text", text: JSON.stringify(await client.updateContact(id, params), null, 2) }],
+    })
+  );
+
+  server.tool(
+    "set_contact_custom_fields",
+    "Write custom field values on an existing contact and nothing else — every standard field is left exactly as it is. The safe way to enrich contacts (CRM sync, tagging, migrating values from another organization) without the full replace update_contact does. Keyed by CONTACT definition id from list_custom_fields (not fieldKey); merged by key, so keys not sent are untouched and null clears one. Only the keys sent are validated — a mandatory field you leave out is not enforced. A value that fails its field's type or rules is 400 CUSTOM_FIELD_VALUE_INVALID; a contact of another organization is 404. Returns the contact with its customFields.",
+    {
+      id: z.string().describe("Contact GUID"),
+      customFields: z
+        .record(z.string(), z.unknown())
+        .describe('Values keyed by definition id, e.g. { "<definitionId>": "Gold", "<listFieldId>": ["a", "b"], "<otherId>": null }'),
+    },
+    async ({ id, customFields }) => ({
+      content: [{ type: "text", text: JSON.stringify(await client.setContactCustomFields(id, customFields), null, 2) }],
     })
   );
 
@@ -755,7 +985,7 @@ export function createServer(client: AeonPassClient, options: ServerOptions = {}
 
   server.tool(
     "upload_contacts",
-    "Bulk create or update contacts from a list. Matches existing contacts by phone/email and upserts; on a match, blank optional fields keep the contact's current value. Custom field values cannot be set here — use create_contact / update_contact. ALL-OR-NOTHING: if any row fails validation, no contacts are saved, and the failing rows come back in errorItems with per-field errors — fix those and resend the whole list. Each row needs firstName and a phone or email. Returns counts of new/updated/error records.",
+    "Bulk create or update contacts from a list. Matches existing contacts by phone/email and upserts; on a match, blank optional fields keep the contact's current value. Custom field values cannot be set here — after the upload, write them per contact with set_contact_custom_fields. ALL-OR-NOTHING: if any row fails validation, no contacts are saved, and the failing rows come back in errorItems with per-field errors — fix those and resend the whole list. Each row needs firstName and a phone or email. Returns counts of new/updated/error records.",
     {
       contacts: z.array(
         z.object({

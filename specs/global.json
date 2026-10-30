@@ -103,7 +103,7 @@
         ]
       }
     },
-    "/api/portal/custom-fields/{entityType}/reorder": {
+    "/api/portal/custom-fields/{EntityType}/reorder": {
       "put": {
         "tags": [
           "Portal"
@@ -156,7 +156,7 @@
         ]
       }
     },
-    "/api/portal/custom-fields/{id}": {
+    "/api/portal/custom-fields/{Id}": {
       "delete": {
         "tags": [
           "Portal"
@@ -170,8 +170,7 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "guid"
+              "type": "string"
             }
           }
         ],
@@ -210,8 +209,7 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "guid"
+              "type": "string"
             }
           }
         ],
@@ -249,8 +247,7 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "guid"
+              "type": "string"
             }
           }
         ],
@@ -301,8 +298,7 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "guid"
+              "type": "string"
             }
           }
         ],
@@ -341,7 +337,7 @@
         ]
       }
     },
-    "/api/portal/custom-fields/{id}/status": {
+    "/api/portal/custom-fields/{Id}/status": {
       "put": {
         "tags": [
           "Portal"
@@ -355,8 +351,7 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "guid"
+              "type": "string"
             }
           }
         ],

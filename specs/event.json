@@ -11,13 +11,300 @@
     }
   ],
   "paths": {
+    "/api/portal/design-mapping": {
+      "post": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Set an event's design.",
+        "description": "Sets the design of an event of the API key's organization by putting one of the organization's reusable techaeon\ndesigns on it. Do this after creating the event; the event's invitations and tickets then use the design.\n\n**Authentication:** Include `X-API-KEY` in the request header. Only events of the API key's organization can be\nused — the organization is never taken from the request.\n\n**Event design:** the event's design is the techaeon design its invitations and tickets show. Designs are reusable\nand belong to the organization (`/portal/techaeon-design`, Organization service); a design mapping puts one of them\non an event, and its `Id` is the event's `DesignMappingId`. **An event has exactly one design.** The event workflow:\n1. `POST /portal/event` — create the event (it has no design yet).\n2. `GET /portal/techaeon-design/list` — pick one of the organization's designs, or create one with\n   `POST /portal/techaeon-design`.\n3. `POST /portal/design-mapping` — set it as the event's design. Refused with `400` (`EVENT_DESIGN_ALREADY_SET`)\n   while the event has one.\n4. `PUT /portal/design-mapping/{Id}` — change the event's design later, e.g. alongside `PUT /portal/event/{Id}`.\n   The event's `DesignMappingId` stays the same.\n5. `DELETE /portal/design-mapping/{Id}` — remove it; the event then has no design until one is set again.\n\n`GET /portal/event/{Id}` returns the event's design as `DesignMappingId` and `DesignId` (both `null` when it has\nnone), and guest invitations created without a `DesignMappingId` use it (or get none). A design mapping whose design\nwas deleted is no longer the event's design: set a new one with `POST`, or give that mapping a design with `PUT`.\nThe same rule applies in the AeonPass web app.\n\n**Behavior:**\n- `DesignId` and `EventId` are required.\n- An event has exactly one design. If it already has one (`DesignMappingId` on `GET /portal/event/{Id}`), the\n  request is rejected with `400` (`EVENT_DESIGN_ALREADY_SET`) and nothing is written; the error message names the\n  existing design mapping. Change it with `PUT /portal/design-mapping/{Id}`, or remove it with\n  `DELETE /portal/design-mapping/{Id}` and set a new one.\n- The response is the event's design; its `Id` is the event's `DesignMappingId`, used on guest invitations.\n\n**`DesignId`:** the `Id` of one of the API key's organization's active designs, from\n`GET /portal/techaeon-design/list`. A design of another organization, or a deleted one, returns `404`.\nA design created moments ago may take a few seconds to become usable here.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, the event already has a design (`EVENT_DESIGN_ALREADY_SET`), or the design is already on the event (`DESIGN_MAPPING_ALREADY_EXIST`). |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, design or design mapping does not exist (in the API key's organization), or was deleted. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassEventAPIEndPointsDesignMappingsPortalPortalCreateDesignMappingEndPoint",
+        "requestBody": {
+          "x-name": "PortalCreateDesignMappingEndPointRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalCreateDesignMappingEndPointRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "The event's design (the created design mapping).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateDesignMappingEndPointResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A required field is missing or invalid, the event already has a design, or the design is already on the event."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The event, design or design mapping does not exist in the API key's organization, or was deleted."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/design-mapping/{eventId}/list": {
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Fetch list of an event's designs.",
+        "description": "Returns the event's design as a list: its active design mapping, or an empty list when the event has no design.\nDesign mappings whose design was deleted are left out. Event id is required in the route param.\n\nAn event created before the one-design rule may have several active design mappings; they are listed newest\nfirst, and the first is the event's design (the one `GET /portal/event/{Id}` reports). Remove the others with\n`DELETE /portal/design-mapping/{Id}`.\n\n**Authentication:** Include `X-API-KEY` in the request header. Only events of the API key's organization can be\nused — the organization is never taken from the request.\n\n**Organization scope:** an event of another organization returns `404`, exactly like an event that does not exist.\n\n**Event design:** the event's design is the techaeon design its invitations and tickets show. Designs are reusable\nand belong to the organization (`/portal/techaeon-design`, Organization service); a design mapping puts one of them\non an event, and its `Id` is the event's `DesignMappingId`. **An event has exactly one design.** The event workflow:\n1. `POST /portal/event` — create the event (it has no design yet).\n2. `GET /portal/techaeon-design/list` — pick one of the organization's designs, or create one with\n   `POST /portal/techaeon-design`.\n3. `POST /portal/design-mapping` — set it as the event's design. Refused with `400` (`EVENT_DESIGN_ALREADY_SET`)\n   while the event has one.\n4. `PUT /portal/design-mapping/{Id}` — change the event's design later, e.g. alongside `PUT /portal/event/{Id}`.\n   The event's `DesignMappingId` stays the same.\n5. `DELETE /portal/design-mapping/{Id}` — remove it; the event then has no design until one is set again.\n\n`GET /portal/event/{Id}` returns the event's design as `DesignMappingId` and `DesignId` (both `null` when it has\nnone), and guest invitations created without a `DesignMappingId` use it (or get none). A design mapping whose design\nwas deleted is no longer the event's design: set a new one with `POST`, or give that mapping a design with `PUT`.\nThe same rule applies in the AeonPass web app.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, the event already has a design (`EVENT_DESIGN_ALREADY_SET`), or the design is already on the event (`DESIGN_MAPPING_ALREADY_EXIST`). |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, design or design mapping does not exist (in the API key's organization), or was deleted. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassEventAPIEndPointsDesignMappingsPortalPortalListDesignMappingEndPoint",
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The event's design mappings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ListDesignMappingEndPointResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A required field is missing or invalid, the event already has a design, or the design is already on the event."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The event, design or design mapping does not exist in the API key's organization, or was deleted."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/design-mapping/{id}": {
+      "delete": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Remove an event's design.",
+        "description": "Removes a design from an event. Design mapping id is required in the route param. This is a soft delete — the\ndesign mapping is marked inactive, never physically removed. The reusable design itself is not deleted and stays\navailable to the organization's other events.\n\n**Authentication:** Include `X-API-KEY` in the request header. Only events of the API key's organization can be\nused — the organization is never taken from the request.\n\n**Organization scope:** a design mapping whose event belongs to another organization returns `404`, exactly like a\nmapping that does not exist. A removed design mapping returns `404` too. A design mapping whose design was deleted can still be removed.\n\nAfter removing the event's design, the event has no design: `GET /portal/event/{Id}` returns `DesignMappingId` and\n`DesignId` as `null`, new guest invitations created without a `DesignMappingId` get none, and a new design can be\nset with `POST /portal/design-mapping`. Existing invitations keep the removed design mapping.\n\nTo give the event a different design, change it with `PUT /portal/design-mapping/{Id}` instead of removing it.\n\n**Response:** `204 No Content` on success, with no response body.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, the event already has a design (`EVENT_DESIGN_ALREADY_SET`), or the design is already on the event (`DESIGN_MAPPING_ALREADY_EXIST`). |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, design or design mapping does not exist (in the API key's organization), or was deleted. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassEventAPIEndPointsDesignMappingsPortalPortalDeleteDesignMappingEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The design was removed from the event."
+          },
+          "400": {
+            "description": "A required field is missing or invalid, the event already has a design, or the design is already on the event."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The event, design or design mapping does not exist in the API key's organization, or was deleted."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Get an event's design.",
+        "description": "Returns an event's design: the event and the reusable techaeon design set on it. Design mapping id is required in\nthe route param — the event's `DesignMappingId` from `GET /portal/event/{Id}`. For the design's image, shape and\ncolor, use `GET /portal/techaeon-design/{Id}` with the returned `DesignId`.\n\n**Authentication:** Include `X-API-KEY` in the request header. Only events of the API key's organization can be\nused — the organization is never taken from the request.\n\n**Organization scope:** a design mapping whose event belongs to another organization returns `404`, exactly like a\nmapping that does not exist. A removed design mapping returns `404` too. A design mapping whose design was deleted returns `404` as well.\n\n**Event design:** the event's design is the techaeon design its invitations and tickets show. Designs are reusable\nand belong to the organization (`/portal/techaeon-design`, Organization service); a design mapping puts one of them\non an event, and its `Id` is the event's `DesignMappingId`. **An event has exactly one design.** The event workflow:\n1. `POST /portal/event` — create the event (it has no design yet).\n2. `GET /portal/techaeon-design/list` — pick one of the organization's designs, or create one with\n   `POST /portal/techaeon-design`.\n3. `POST /portal/design-mapping` — set it as the event's design. Refused with `400` (`EVENT_DESIGN_ALREADY_SET`)\n   while the event has one.\n4. `PUT /portal/design-mapping/{Id}` — change the event's design later, e.g. alongside `PUT /portal/event/{Id}`.\n   The event's `DesignMappingId` stays the same.\n5. `DELETE /portal/design-mapping/{Id}` — remove it; the event then has no design until one is set again.\n\n`GET /portal/event/{Id}` returns the event's design as `DesignMappingId` and `DesignId` (both `null` when it has\nnone), and guest invitations created without a `DesignMappingId` use it (or get none). A design mapping whose design\nwas deleted is no longer the event's design: set a new one with `POST`, or give that mapping a design with `PUT`.\nThe same rule applies in the AeonPass web app.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, the event already has a design (`EVENT_DESIGN_ALREADY_SET`), or the design is already on the event (`DESIGN_MAPPING_ALREADY_EXIST`). |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, design or design mapping does not exist (in the API key's organization), or was deleted. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassEventAPIEndPointsDesignMappingsPortalPortalGetDesignMappingEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The event's design mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetDesignMappingEndPointResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A required field is missing or invalid, the event already has a design, or the design is already on the event."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The event, design or design mapping does not exist in the API key's organization, or was deleted."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Change an event's design.",
+        "description": "Changes the design of an event: the event's design mapping is switched to another of the organization's reusable\ntechaeon designs. Design mapping id is required in the route param — the event's `DesignMappingId` from\n`GET /portal/event/{Id}`.\n\n**Authentication:** Include `X-API-KEY` in the request header. Only events of the API key's organization can be\nused — the organization is never taken from the request.\n\n**Organization scope:** a design mapping whose event belongs to another organization returns `404`, exactly like a\nmapping that does not exist. A removed design mapping returns `404` too.\n\n**Event design:** the event's design is the techaeon design its invitations and tickets show. Designs are reusable\nand belong to the organization (`/portal/techaeon-design`, Organization service); a design mapping puts one of them\non an event, and its `Id` is the event's `DesignMappingId`. **An event has exactly one design.** The event workflow:\n1. `POST /portal/event` — create the event (it has no design yet).\n2. `GET /portal/techaeon-design/list` — pick one of the organization's designs, or create one with\n   `POST /portal/techaeon-design`.\n3. `POST /portal/design-mapping` — set it as the event's design. Refused with `400` (`EVENT_DESIGN_ALREADY_SET`)\n   while the event has one.\n4. `PUT /portal/design-mapping/{Id}` — change the event's design later, e.g. alongside `PUT /portal/event/{Id}`.\n   The event's `DesignMappingId` stays the same.\n5. `DELETE /portal/design-mapping/{Id}` — remove it; the event then has no design until one is set again.\n\n`GET /portal/event/{Id}` returns the event's design as `DesignMappingId` and `DesignId` (both `null` when it has\nnone), and guest invitations created without a `DesignMappingId` use it (or get none). A design mapping whose design\nwas deleted is no longer the event's design: set a new one with `POST`, or give that mapping a design with `PUT`.\nThe same rule applies in the AeonPass web app.\n\n**Behavior:**\n- `EventId` must be the design mapping's own event — an event's design cannot be moved to another event (`404`).\n- Only this design mapping changes, and it stays the event's design: the event's `DesignMappingId` never moves to\n  another mapping. A removed design mapping returns `404`.\n- Sending the mapping's current `DesignId` changes nothing (no write, no ticket regeneration) and returns the\n  mapping as it is.\n- The `DesignMappingId` stays the same, so invitations that use it switch to the new design; their tickets are\n  regenerated with its image.\n- An event created before the one-design rule may still have several design mappings: switching one to a design\n  that another of them already uses returns `400` (`DESIGN_MAPPING_ALREADY_EXIST`).\n- Works on a design mapping whose design was deleted, to give the event a design again.\n- Only this event changes. To change the design itself on every event that uses it, use\n  `PUT /portal/techaeon-design/{Id}`.\n\n**`DesignId`:** the `Id` of one of the API key's organization's active designs, from\n`GET /portal/techaeon-design/list`. A design of another organization, or a deleted one, returns `404`.\nA design created moments ago may take a few seconds to become usable here.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, the event already has a design (`EVENT_DESIGN_ALREADY_SET`), or the design is already on the event (`DESIGN_MAPPING_ALREADY_EXIST`). |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, design or design mapping does not exist (in the API key's organization), or was deleted. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassEventAPIEndPointsDesignMappingsPortalPortalUpdateDesignMappingEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "PortalUpdateDesignMappingEndPointRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalUpdateDesignMappingEndPointRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "The event's updated design mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateDesignMappingEndPointResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A required field is missing or invalid, the event already has a design, or the design is already on the event."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The event, design or design mapping does not exist in the API key's organization, or was deleted."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
     "/api/portal/event": {
       "post": {
         "tags": [
           "Portal"
         ],
         "summary": "Create a new event.",
-        "description": "Creates a new event in the API key's organization. The event is created as a **draft** — publish it with\n`POST /portal/event/{Id}/publish`.\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Behavior:**\n- `Title` (up to 200 characters) and `StartDate` are required.\n- `TypeId` is optional and defaults to **Invite only** (`INVITEONLY`).\n- `ParentEventId` is optional and makes the new event a sub-event.\n- The response is the created event; save its `Id` to update or publish it later.\n\n**Validation** (nothing is written when a rule fails):\n- A property the request does not define → `400`.\n- `TypeId` that is not an event type from `GET /portal/event/types` → `404`.\n- A negative `MaximumGuests` or `AdditionalGuestLimit` → `400`.\n- `EndDate` before `StartDate` → `400`.\n- `ParentEventId` that is the event itself or one of its sub-events → `400`; an event of another organization → `404`.\n\n**Event types (`TypeId`):** send the `Id` of an event type returned by `GET /portal/event/types`\n(e.g. Invite only — `INVITEONLY`, Open invite — `OPENINVITE`). Event types are the same for every organization.\n\n**Dates:** `StartDate`, `EndDate` and `DoorOpenDate` are local times in the event's `EventTimeZone`\n(an IANA name such as `America/Los_Angeles`).\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
+        "description": "Creates a new event in the API key's organization. The event is created as a **draft** — publish it with\n`POST /portal/event/{Id}/publish`.\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Behavior:**\n- `Title` (up to 200 characters) and `StartDate` are required.\n- `TypeId` is optional and defaults to **Invite only** (`INVITEONLY`).\n- `ParentEventId` is optional and makes the new event a sub-event.\n- The response is the created event; save its `Id` to update or publish it later.\n\n**Validation** (nothing is written when a rule fails):\n- A property the request does not define → `400`.\n- `TypeId` that is not an event type from `GET /portal/event/types` → `404`.\n- A negative `MaximumGuests` or `AdditionalGuestLimit` → `400`.\n- `EndDate` before `StartDate` → `400`.\n- `ParentEventId` that is the event itself or one of its sub-events → `400`; an event of another organization → `404`.\n\n**Event types (`TypeId`):** send the `Id` of an event type returned by `GET /portal/event/types`\n(e.g. Invite only — `INVITEONLY`, Open invite — `OPENINVITE`). Event types are the same for every organization.\n\n**Dates:** `StartDate`, `EndDate` and `DoorOpenDate` are local times in the event's `EventTimeZone`\n(an IANA name such as `America/Los_Angeles`).\n\n**Event design:** the design is not part of the event request, and an event has exactly one. After creating the\nevent, set its design with `POST /portal/design-mapping` — one of the organization's reusable designs from\n`GET /portal/techaeon-design/list` (Organization service). Change it later with `PUT /portal/design-mapping/{Id}`,\nusing the event's `DesignMappingId` from `GET /portal/event/{Id}`.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
         "operationId": "AeonPassEventAPIEndPointsEventsPortalPortalCreateEventEndPoint",
         "requestBody": {
           "x-name": "PortalCreateEventEndPointRequest",
@@ -42,6 +329,24 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "A required field is missing or invalid, a validation rule failed, or the body has an unknown property."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The event, its type or its parent event does not exist in the API key's organization."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
           }
         },
         "security": [
@@ -57,7 +362,7 @@
           "Portal"
         ],
         "summary": "Fetch event details.",
-        "description": "Fetches public-facing details for an event.\n\n**Authentication:** Include `X-API-KEY` in the request header. Event id is required in the route param.\n\n**Behavior:**\n- Only active events are returned.\n- `OrganizationId`, internal status codes, marketing page link, and email-notification settings are not included in the response.\n- Venue and design information is returned as reference IDs only (`VenueId`, `DesignMappingId`, `DesignId`) — no address/location details or design content (colors, template, images) are included.\n- No ticketing tiers, pricing, or promo code details are included — only whether ticketing is enabled and the currency used.\n- No guest, invitation, or sub-event data is included.",
+        "description": "Fetches public-facing details for an event.\n\n**Authentication:** Include `X-API-KEY` in the request header. Event id is required in the route param.\n\n**Behavior:**\n- Only active events are returned.\n- `OrganizationId`, internal status codes, marketing page link, and email-notification settings are not included in the response.\n- Venue and design information is returned as reference IDs only (`VenueId`, `DesignMappingId`, `DesignId`) — no address/location details or design content (colors, template, images) are included.\n- `DesignMappingId` and `DesignId` are the event's design — its active design mapping with an active design — or `null` when it has none (not set yet, removed, or its design was deleted). Set it with `POST /portal/design-mapping`. Change it with `PUT /portal/design-mapping/{DesignMappingId}`; get the design's image, shape and color with `GET /portal/techaeon-design/{DesignId}` (Organization service).\n- No ticketing tiers, pricing, or promo code details are included — only whether ticketing is enabled and the currency used.\n- No guest, invitation, or sub-event data is included.",
         "operationId": "AeonPassEventAPIEndPointsEventsPortalPortalGetEventEndPoint",
         "parameters": [
           {
@@ -93,7 +398,7 @@
           "Portal"
         ],
         "summary": "Partially update an event — only the fields you send are touched.",
-        "description": "Updates only the fields present in the request body. This is a true partial update (JSON Merge Patch\nsemantics), unlike `PUT /portal/event/{Id}` which replaces the whole record.\n\n**Every field is a plain value in the JSON — never a `{ \"isSet\": ..., \"value\": ... }` wrapper.** That shape\nonly exists internally to tell \"omitted\" apart from \"sent as null\"; sending it literally as JSON will fail to\ndeserialize. For example, to rename an event and touch nothing else:\n```json\n{\n  \"title\": \"Annual Tech Conference 2026\"\n}\n```\n\n- **Omit a field** to leave it completely unchanged.\n- **Send a field with a value** to set/replace it.\n- **Send a field as explicit `null`** to clear it, where the event allows it (e.g. `description`, `endDate`,\n  `doorOpenDate`, `maximumGuests`, `parentEventId`, `hostName`). Fields an event can never be without —\n  `title`, `startDate`, `typeId`, `ticketCurrency`, `isRegQuestionEnable`, `isVenueHidden` — reject an\n  explicit `null` with a validation error instead of silently ignoring it.\n- At least one field must be sent, otherwise `400` (`NO_FIELDS_TO_UPDATE`).\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- `title` is limited to 200 characters.\n- The **Validation** rules below apply to the fields you send; `endDate` before `startDate` is checked against the\n  event as it will be stored, so sending only one of them is compared with the other's current value.\n- The event's status, ticketing and email-notification settings are not changed here — use\n  `POST /portal/event/{Id}/publish` to publish.\n- When the event is published, ticketed and its `title` or `description` changes, the ticketing store is\n  updated too.\n- The response is the whole event after the update.\n\n**`Notify`:** when `true`, the event's guests are sent an update notification about the change. The host name on\nthe notification is the organization owner's.\n\n**Validation** (nothing is written when a rule fails):\n- A property the request does not define → `400`.\n- `TypeId` that is not an event type from `GET /portal/event/types` → `404`.\n- A negative `MaximumGuests` or `AdditionalGuestLimit` → `400`.\n- `EndDate` before `StartDate` → `400`.\n- `ParentEventId` that is the event itself or one of its sub-events → `400`; an event of another organization → `404`.\n\n**Event types (`TypeId`):** send the `Id` of an event type returned by `GET /portal/event/types`\n(e.g. Invite only — `INVITEONLY`, Open invite — `OPENINVITE`). Event types are the same for every organization.\n\n**Dates:** `StartDate`, `EndDate` and `DoorOpenDate` are local times in the event's `EventTimeZone`\n(an IANA name such as `America/Los_Angeles`).\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
+        "description": "Updates only the fields present in the request body. This is a true partial update (JSON Merge Patch\nsemantics), unlike `PUT /portal/event/{Id}` which replaces the whole record.\n\n**Every field is a plain value in the JSON — never a `{ \"isSet\": ..., \"value\": ... }` wrapper.** That shape\nonly exists internally to tell \"omitted\" apart from \"sent as null\"; sending it literally as JSON will fail to\ndeserialize. For example, to rename an event and touch nothing else:\n```json\n{\n  \"title\": \"Annual Tech Conference 2026\"\n}\n```\n\n- **Omit a field** to leave it completely unchanged.\n- **Send a field with a value** to set/replace it.\n- **Send a field as explicit `null`** to clear it, where the event allows it (e.g. `description`, `endDate`,\n  `doorOpenDate`, `maximumGuests`, `parentEventId`, `hostName`). Fields an event can never be without —\n  `title`, `startDate`, `typeId`, `ticketCurrency`, `isRegQuestionEnable`, `isVenueHidden` — reject an\n  explicit `null` with a validation error instead of silently ignoring it.\n- At least one field must be sent, otherwise `400` (`NO_FIELDS_TO_UPDATE`).\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- `title` is limited to 200 characters.\n- The **Validation** rules below apply to the fields you send; `endDate` before `startDate` is checked against the\n  event as it will be stored, so sending only one of them is compared with the other's current value.\n- The event's status, ticketing and email-notification settings are not changed here — use\n  `POST /portal/event/{Id}/publish` to publish.\n- When the event is published, ticketed and its `title` or `description` changes, the ticketing store is\n  updated too.\n- The response is the whole event after the update.\n\n**`Notify`:** when `true`, the event's guests are sent an update notification about the change. The host name on\nthe notification is the organization owner's.\n\n**Validation** (nothing is written when a rule fails):\n- A property the request does not define → `400`.\n- `TypeId` that is not an event type from `GET /portal/event/types` → `404`.\n- A negative `MaximumGuests` or `AdditionalGuestLimit` → `400`.\n- `EndDate` before `StartDate` → `400`.\n- `ParentEventId` that is the event itself or one of its sub-events → `400`; an event of another organization → `404`.\n\n**Event types (`TypeId`):** send the `Id` of an event type returned by `GET /portal/event/types`\n(e.g. Invite only — `INVITEONLY`, Open invite — `OPENINVITE`). Event types are the same for every organization.\n\n**Dates:** `StartDate`, `EndDate` and `DoorOpenDate` are local times in the event's `EventTimeZone`\n(an IANA name such as `America/Los_Angeles`).\n\n**Event design:** the design is not part of the event request, and an event has exactly one. After creating the\nevent, set its design with `POST /portal/design-mapping` — one of the organization's reusable designs from\n`GET /portal/techaeon-design/list` (Organization service). Change it later with `PUT /portal/design-mapping/{Id}`,\nusing the event's `DesignMappingId` from `GET /portal/event/{Id}`.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
         "operationId": "AeonPassEventAPIEndPointsEventsPortalPortalPatchEventEndPoint",
         "parameters": [
           {
@@ -130,6 +435,24 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "A required field is missing or invalid, a validation rule failed, or the body has an unknown property."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The event, its type or its parent event does not exist in the API key's organization."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
           }
         },
         "security": [
@@ -143,7 +466,7 @@
           "Portal"
         ],
         "summary": "Update an event.",
-        "description": "Updates an event of the API key's organization.\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- `Title` (up to 200 characters), `StartDate` and `TypeId` are required.\n- Text fields sent as `null` (or left out) keep their current value. All other fields — dates, numbers,\n  booleans and `ParentEventId` — are always replaced, so leaving one out clears it. Send the current values\n  (from `GET /portal/event/{Id}`) for anything you do not want to change. `TicketCurrency` is reset to `USD`\n  when left out.\n- When the event is published, ticketed and its `Title` or `Description` changes, the ticketing store is\n  updated too.\n\n**`Notify`:** when `true`, the event's guests are sent an update notification about the change. The host name on\nthe notification is the organization owner's.\n\n**Validation** (nothing is written when a rule fails):\n- A property the request does not define → `400`.\n- `TypeId` that is not an event type from `GET /portal/event/types` → `404`.\n- A negative `MaximumGuests` or `AdditionalGuestLimit` → `400`.\n- `EndDate` before `StartDate` → `400`.\n- `ParentEventId` that is the event itself or one of its sub-events → `400`; an event of another organization → `404`.\n\n**Event types (`TypeId`):** send the `Id` of an event type returned by `GET /portal/event/types`\n(e.g. Invite only — `INVITEONLY`, Open invite — `OPENINVITE`). Event types are the same for every organization.\n\n**Dates:** `StartDate`, `EndDate` and `DoorOpenDate` are local times in the event's `EventTimeZone`\n(an IANA name such as `America/Los_Angeles`).\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
+        "description": "Updates an event of the API key's organization.\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- `Title` (up to 200 characters), `StartDate` and `TypeId` are required.\n- Text fields sent as `null` (or left out) keep their current value. All other fields — dates, numbers,\n  booleans and `ParentEventId` — are always replaced, so leaving one out clears it. Send the current values\n  (from `GET /portal/event/{Id}`) for anything you do not want to change. `TicketCurrency` is reset to `USD`\n  when left out.\n- When the event is published, ticketed and its `Title` or `Description` changes, the ticketing store is\n  updated too.\n\n**`Notify`:** when `true`, the event's guests are sent an update notification about the change. The host name on\nthe notification is the organization owner's.\n\n**Validation** (nothing is written when a rule fails):\n- A property the request does not define → `400`.\n- `TypeId` that is not an event type from `GET /portal/event/types` → `404`.\n- A negative `MaximumGuests` or `AdditionalGuestLimit` → `400`.\n- `EndDate` before `StartDate` → `400`.\n- `ParentEventId` that is the event itself or one of its sub-events → `400`; an event of another organization → `404`.\n\n**Event types (`TypeId`):** send the `Id` of an event type returned by `GET /portal/event/types`\n(e.g. Invite only — `INVITEONLY`, Open invite — `OPENINVITE`). Event types are the same for every organization.\n\n**Dates:** `StartDate`, `EndDate` and `DoorOpenDate` are local times in the event's `EventTimeZone`\n(an IANA name such as `America/Los_Angeles`).\n\n**Event design:** the design is not part of the event request, and an event has exactly one. After creating the\nevent, set its design with `POST /portal/design-mapping` — one of the organization's reusable designs from\n`GET /portal/techaeon-design/list` (Organization service). Change it later with `PUT /portal/design-mapping/{Id}`,\nusing the event's `DesignMappingId` from `GET /portal/event/{Id}`.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
         "operationId": "AeonPassEventAPIEndPointsEventsPortalPortalUpdateEventEndPoint",
         "parameters": [
           {
@@ -180,6 +503,24 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "A required field is missing or invalid, a validation rule failed, or the body has an unknown property."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The event, its type or its parent event does not exist in the API key's organization."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
           }
         },
         "security": [
@@ -195,7 +536,7 @@
           "Portal"
         ],
         "summary": "Update an event's details content.",
-        "description": "Replaces the `Details` content of an event of the API key's organization. Nothing else on the event changes.\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- `Details` is written as sent; `null` clears it.\n- A property the request does not define → `400`.\n\n**`Notify`:** when `true`, the event's guests are sent an update notification about the change. The host name on\nthe notification is the organization owner's.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
+        "description": "Replaces the `Details` content of an event of the API key's organization. Nothing else on the event changes.\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- `Details` is written as sent; `null` clears it.\n- A property the request does not define → `400`.\n\n**`Notify`:** when `true`, the event's guests are sent an update notification about the change. The host name on\nthe notification is the organization owner's.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
         "operationId": "AeonPassEventAPIEndPointsEventsPortalPortalUpdateEventDetailsEndPoint",
         "parameters": [
           {
@@ -232,6 +573,24 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "A required field is missing or invalid, a validation rule failed, or the body has an unknown property."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The event, its type or its parent event does not exist in the API key's organization."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
           }
         },
         "security": [
@@ -247,7 +606,7 @@
           "Portal"
         ],
         "summary": "Update an event's invitee settings.",
-        "description": "Updates the invitee settings of an event of the API key's organization: its type, guest limit and the number\nof additional guests each guest may bring. Nothing else on the event changes.\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- `TypeId` is required.\n- `MaximumGuests` and `AdditionalGuestLimit` are written as sent; leaving one out clears it (no limit).\n- A property the request does not define → `400`; a `TypeId` that is not an event type from `GET /portal/event/types` → `404`; a negative limit → `400`.\n  Nothing is written when a rule fails.\n\n**Event types (`TypeId`):** send the `Id` of an event type returned by `GET /portal/event/types`\n(e.g. Invite only — `INVITEONLY`, Open invite — `OPENINVITE`). Event types are the same for every organization.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
+        "description": "Updates the invitee settings of an event of the API key's organization: its type, guest limit and the number\nof additional guests each guest may bring. Nothing else on the event changes.\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- `TypeId` is required.\n- `MaximumGuests` and `AdditionalGuestLimit` are written as sent; leaving one out clears it (no limit).\n- A property the request does not define → `400`; a `TypeId` that is not an event type from `GET /portal/event/types` → `404`; a negative limit → `400`.\n  Nothing is written when a rule fails.\n\n**Event types (`TypeId`):** send the `Id` of an event type returned by `GET /portal/event/types`\n(e.g. Invite only — `INVITEONLY`, Open invite — `OPENINVITE`). Event types are the same for every organization.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
         "operationId": "AeonPassEventAPIEndPointsEventsPortalPortalUpdateEventInviteeEndPoint",
         "parameters": [
           {
@@ -284,6 +643,24 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "A required field is missing or invalid, a validation rule failed, or the body has an unknown property."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The event, its type or its parent event does not exist in the API key's organization."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
           }
         },
         "security": [
@@ -299,7 +676,7 @@
           "Portal"
         ],
         "summary": "Publish an event.",
-        "description": "Publishes an event of the API key's organization. The event id is in the route; no request body is needed\n(an empty body or `{}` is accepted too).\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- Sets the event's status to **Published**.\n- For a ticketed event, its ticket groups and tiers are sent to the ticketing store (again, if the event was\n  already published).\n- Returns `true` when the event was published.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |",
+        "description": "Publishes an event of the API key's organization. The event id is in the route; no request body is needed\n(an empty body or `{}` is accepted too).\n\n**Authentication:** Include `X-API-KEY` in the request header. The event's organization is the API key's\norganization — it is never taken from the request.\n\n**Organization scope:** only events of the API key's organization can be changed. An event of another\norganization returns `404`, exactly like an event that does not exist.\n\n**Behavior:**\n- Sets the event's status to **Published**.\n- For a ticketed event, its ticket groups and tiers are sent to the ticketing store (again, if the event was\n  already published).\n- Returns `true` when the event was published.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid, a **Validation** rule failed, or the body has an unknown property. |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, its `TypeId`, or `ParentEventId` does not exist (in the API key's organization). |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
         "operationId": "AeonPassEventAPIEndPointsEventsPortalPortalPublishEventEndPoint",
         "parameters": [
           {
@@ -322,6 +699,24 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "A required field is missing or invalid, a validation rule failed, or the body has an unknown property."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The event, its type or its parent event does not exist in the API key's organization."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
           }
         },
         "security": [
@@ -337,7 +732,7 @@
           "Portal"
         ],
         "summary": "Create a new guest.",
-        "description": "Creates a new guest for an event and, optionally, issues them an invitation.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `FirstName` is required, and at least one of `Phone` or `Email` must be provided.\n- `GroupId` is required. Valid guest group IDs can be retrieved via `GET /portal/guest-group/{OrganizationId}/list`.\n- Rejects the request if a guest with the same `Phone` or `Email` already exists in the event.\n- If `GuestCode` is provided, it must not already be used by any guest in any event.\n- If `TechaeonCode` is provided, it is validated against the event and the guest is linked to that Techaeon.\n- If `Invitation` is provided, an invitation is created with status **CREATED** (or **PURCHASED** if `IsExternalTicket` is set), and a QR code is generated for it. `Invitation.DesignMappingId` is optional: left out, the event's design is used, or none when the event has no design yet. The response's `Invitation.Id` is the invitation's own identifier — save it if you plan to reference the invitation directly later, though `PUT /portal/guest/{Id}` no longer requires it (it resolves the guest's current invitation automatically).\n- If the guest's `Phone`/`Email` matches an existing platform user account, the guest is automatically linked to that user.\n- If `IsExternalTicket` is set, the `ExternalTicket` details are used to create an associated external ticket order.\n- `CustomFields` is optional, keyed by custom field definition id (see AeonPassGlobal's `GET /portal/custom-fields?entityType=GUEST`). Every currently-`ACTIVE` mandatory field must be included. Omit `CustomFields` entirely to skip custom fields altogether.\n\n**Valid Invitation Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Invitation created but not yet sent. |\n| `SENT` | Invitation has been sent to the guest. |\n| `VIEWED` | Guest has viewed the invitation. |\n| `ACCEPTED` | Guest has accepted the invitation. |\n| `DECLINED` | Guest has declined the invitation. |\n| `VOIDED` | Invitation has been voided. |\n| `EXPIRED` | Invitation has expired. |\n| `ADMITTED` | Guest has been admitted to the event. |\n| `CANCELLED` | Invitation has been cancelled. |\n| `PURCHASED` | Invitation is linked to a purchased/external ticket. |",
+        "description": "Creates a new guest for an event and, optionally, issues them an invitation.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `FirstName` is required, and at least one of `Phone` or `Email` must be provided.\n- `GroupId` is required. Valid guest group IDs can be retrieved via `GET /portal/guest-group/{OrganizationId}/list`.\n- Rejects the request if a guest with the same `Phone` or `Email` already exists in the event.\n- If `GuestCode` is provided, it must not already be used by any guest in any event.\n- If `TechaeonCode` is provided, it is validated against the event and the guest is linked to that Techaeon.\n- If `Invitation` is provided, an invitation is created with status **CREATED** (or **PURCHASED** if `IsExternalTicket` is set), and a QR code is generated for it. `Invitation.DesignMappingId` is optional: left out, the event's design is used, or none when the event has no design yet. The response's `Invitation.Id` is the invitation's own identifier — save it if you plan to reference the invitation directly later, though `PUT /portal/guest/{Id}` no longer requires it (it resolves the guest's current invitation automatically).\n- If the guest's `Phone`/`Email` matches an existing platform user account, the guest is automatically linked to that user.\n- If `IsExternalTicket` is set, the `ExternalTicket` details are used to create an associated external ticket order.\n- `CustomFields` is optional, keyed by custom field definition id (see AeonPassGlobal's `GET /portal/custom-fields?entityType=GUEST`). Every currently-`ACTIVE` mandatory field must be included. Omit `CustomFields` entirely to skip custom fields altogether.\n\n**Invitation statuses:** the response's `Invitation.StatusId` is the `Id` of a status from `GET /portal/invitation/status/list`. A guest created without `Invitation` can be given one later with `POST /portal/guest/{GuestId}/invitation`.\n\n**Valid Invitation Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Invitation created but not yet sent. |\n| `SENT` | Invitation has been sent to the guest. |\n| `VIEWED` | Guest has viewed the invitation. |\n| `ACCEPTED` | Guest has accepted the invitation. |\n| `DECLINED` | Guest has declined the invitation. |\n| `VOIDED` | Invitation has been voided. |\n| `EXPIRED` | Invitation has expired. |\n| `ADMITTED` | Guest has been admitted to the event. |\n| `CANCELLED` | Invitation has been cancelled. |\n| `PURCHASED` | Invitation is linked to a purchased/external ticket. |",
         "operationId": "AeonPassEventAPIEndPointsGuestsPortalPortalCreateGuestEndPoint",
         "requestBody": {
           "x-name": "PortalCreateGuestEndPointRequest",
@@ -477,6 +872,142 @@
         ]
       }
     },
+    "/api/portal/guest/{guestId}/invitation": {
+      "post": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Create an invitation for a guest.",
+        "description": "Creates the invitation of an existing guest who was added without one. Guest id is required in the route param.\n\n**Authentication:** Include `X-API-KEY` in the request header. Only guests of events of the API key's organization\ncan be used — the organization is never taken from the request.\n\n**Organization scope:** the event must belong to the API key's organization and the guest (route `GuestId`) must be\na guest of that event (`EventId`). Otherwise the call returns `404`, exactly like a guest or event that does not exist.\n\n**Behavior:**\n- `EventId` is required and must be the guest's own event.\n- A guest has at most one invitation: if the guest already has one, the request is rejected with `400` (`INVITATION_ALREADY_EXISTS`) — use `PUT /portal/guest/{GuestId}/invitation` to change it.\n- The invitation is created with status **CREATED**, and a QR code is generated for it.\n- `DesignMappingId` is optional: left out, the event's design is used (`DesignMappingId` on `GET /portal/event/{Id}`), or none when the event has no design yet.\n- `GuestPasses` (0 or more) and `IsUnlimited` are optional; `IsUnlimited` defaults to `false`.\n\n**`DesignMappingId`:** the event's design — its `DesignMappingId` from `GET /portal/event/{Id}`, or the `Id` of one of\nthe event's designs from `GET /portal/design-mapping/{eventId}/list`. Set an event's design with\n`POST /portal/design-mapping`. A design mapping of another event returns `404`.\n\n**Invitation statuses:** a `StatusId` is the `Id` of a status from `GET /portal/invitation/status/list` (the same\nfor every organization); responses report the invitation's `StatusId`, `StatusName` and `StatusCode`.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A field is invalid (an empty `GuestId` or `EventId`, or a negative `GuestPasses`), or — on create — the guest already has an invitation (`INVITATION_ALREADY_EXISTS`). |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, guest, design mapping or invitation status does not exist (in the API key's organization), or — on update — the guest has no invitation. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassEventAPIEndPointsInvitationsPortalPortalCreateInvitationEndPoint",
+        "parameters": [
+          {
+            "name": "guestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "PortalCreateInvitationEndPointRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalCreateInvitationEndPointRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "The created invitation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalCreateInvitationEndPointResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A field is invalid, or the guest already has an invitation (`INVITATION_ALREADY_EXISTS`)."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The event, guest or design mapping does not exist in the API key's organization."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Update a guest's invitation.",
+        "description": "Updates the invitation of an existing guest. Guest id is required in the route param.\n\n**Authentication:** Include `X-API-KEY` in the request header. Only guests of events of the API key's organization\ncan be used — the organization is never taken from the request.\n\n**Organization scope:** the event must belong to the API key's organization and the guest (route `GuestId`) must be\na guest of that event (`EventId`). Otherwise the call returns `404`, exactly like a guest or event that does not exist.\n\n**Behavior:**\n- `EventId` is required and must be the guest's own event.\n- Returns `404` if the guest has no invitation — create it with `POST /portal/guest/{GuestId}/invitation`.\n- `GuestPasses` and `IsUnlimited` are replaced: leaving them out clears `GuestPasses` and sets `IsUnlimited` to `false`.\n- `DesignMappingId` and `StatusId` are optional: left out, the invitation keeps its current design mapping and status.\n- If the status changes, a Techaeon is automatically generated for the new status.\n- Ticket details (`IsExternalTicket`, purchased quantity) are not changed by this endpoint.\n\n**`DesignMappingId`:** the event's design — its `DesignMappingId` from `GET /portal/event/{Id}`, or the `Id` of one of\nthe event's designs from `GET /portal/design-mapping/{eventId}/list`. Set an event's design with\n`POST /portal/design-mapping`. A design mapping of another event returns `404`.\n\n**Invitation statuses:** a `StatusId` is the `Id` of a status from `GET /portal/invitation/status/list` (the same\nfor every organization); responses report the invitation's `StatusId`, `StatusName` and `StatusCode`. An unknown `StatusId` returns `404`.\n\n**Valid Invitation Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Invitation created but not yet sent. |\n| `SENT` | Invitation has been sent to the guest. |\n| `VIEWED` | Guest has viewed the invitation. |\n| `ACCEPTED` | Guest has accepted the invitation. |\n| `DECLINED` | Guest has declined the invitation. |\n| `VOIDED` | Invitation has been voided. |\n| `EXPIRED` | Invitation has expired. |\n| `ADMITTED` | Guest has been admitted to the event. |\n| `CANCELLED` | Invitation has been cancelled. |\n| `PURCHASED` | Invitation is linked to a purchased/external ticket. |\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A field is invalid (an empty `GuestId` or `EventId`, or a negative `GuestPasses`), or — on create — the guest already has an invitation (`INVITATION_ALREADY_EXISTS`). |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The event, guest, design mapping or invitation status does not exist (in the API key's organization), or — on update — the guest has no invitation. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassEventAPIEndPointsInvitationsPortalPortalUpdateInvitationEndPoint",
+        "parameters": [
+          {
+            "name": "guestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "PortalUpdateInvitationEndPointRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalUpdateInvitationEndPointRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "The updated invitation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalUpdateInvitationEndPointResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A field is invalid (an empty `GuestId` or `EventId`, or a negative `GuestPasses`)."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The event, guest, design mapping or invitation status does not exist in the API key's organization, or the guest has no invitation."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
     "/api/portal/guest/{id}": {
       "delete": {
         "tags": [
@@ -574,7 +1105,7 @@
           "Portal"
         ],
         "summary": "Partially update a guest — only the fields you send are touched.",
-        "description": "Updates only the fields present in the request body. This is a true partial update\n(JSON Merge Patch semantics), unlike `PUT /portal/guest/{Id}` which replaces the\nwhole record.\n\n**Every field is a plain value in the JSON — never a `{ \"isSet\": ..., \"value\": ... }`\nwrapper.** That shape only exists internally to tell \"omitted\" apart from \"sent as\nnull\"; sending it literally as JSON will fail to deserialize. For example, to rename\na guest and touch nothing else:\n```json\n{\n  \"eventId\": \"e06c9e46-b959-4745-af62-14d9d57947f0\",\n  \"firstName\": \"Jordan Rivera\"\n}\n```\n`lastName`, `phone`, `groupId`, etc. are simply absent from the body above — they are\nleft exactly as they are today.\n\n- **Omit a field** to leave it completely unchanged.\n- **Send a field with a value** to set/replace it.\n- **Send a field as explicit `null`** to clear it, where the domain allows it (e.g.\n  `lastName`, `techaeonCode`, `guestCode`). Fields that can never be empty on a guest\n  (`firstName`, `groupId`) reject an explicit `null` with a validation error instead\n  of silently ignoring it.\n- `invitation` and `externalTicket` are the two exceptions to the rule above — they're\n  plain nested objects in the schema (not the omit/value/null tri-state), because\n  there's no separate \"clear\" behavior for either one to distinguish. Omitting the key\n  or sending it as `null` both mean the same thing: leave it untouched. Send an object\n  to create/update one.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `Phone`/`Email` may both be omitted for a status- or Techaeon-only patch — the\n  guest's current contact info is kept. If a patch would leave the guest with neither\n  Phone nor Email (e.g. explicitly nulling both), the request is rejected with\n  `PHONE_OR_EMAIL_REQUIRED`.\n- `TechaeonCode`: omit to leave the current mapping untouched, send an explicit\n  `null` to detach it, or send a new code to validate and link it. Changing the\n  Techaeon code is only allowed while the guest's invitation status is `CREATED`,\n  `SENT`, or `VIEWED`.\n- `Invitation` is matched to the guest automatically (a guest has at most one active\n  invitation) — you don't need to know its Id. Omit `Invitation` entirely to leave it\n  untouched; within it, omit individual fields (e.g. send only `statusId`) to leave\n  them unchanged too. `Invitation.DesignMappingId` is required only the first time an\n  invitation is created for a guest that doesn't have one yet.\n- If `Phone`/`Email` changes, the invitation's QR code is regenerated.\n- If the invitation status changes without an explicit `TechaeonCode`, a Techaeon is\n  automatically generated for the new status.\n- `CustomFields` is optional and is **not** part of the omit/value/null tri-state above\n  — it's a plain object keyed by custom field definition id. Omit `CustomFields` entirely\n  to touch no custom fields at all. Include it to merge exactly the keys present: a\n  value sets/replaces that field, an explicit `null` clears it. Keys not mentioned are\n  left untouched, same as every other field this endpoint doesn't receive.\n\n**Valid Invitation Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Invitation created but not yet sent. |\n| `SENT` | Invitation has been sent to the guest. |\n| `VIEWED` | Guest has viewed the invitation. |\n| `ACCEPTED` | Guest has accepted the invitation. |\n| `DECLINED` | Guest has declined the invitation. |\n| `VOIDED` | Invitation has been voided. |\n| `EXPIRED` | Invitation has expired. |\n| `ADMITTED` | Guest has been admitted to the event. |\n| `CANCELLED` | Invitation has been cancelled. |\n| `PURCHASED` | Invitation is linked to a purchased/external ticket. |",
+        "description": "Updates only the fields present in the request body. This is a true partial update\n(JSON Merge Patch semantics), unlike `PUT /portal/guest/{Id}` which replaces the\nwhole record.\n\n**Every field is a plain value in the JSON — never a `{ \"isSet\": ..., \"value\": ... }`\nwrapper.** That shape only exists internally to tell \"omitted\" apart from \"sent as\nnull\"; sending it literally as JSON will fail to deserialize. For example, to rename\na guest and touch nothing else:\n```json\n{\n  \"eventId\": \"e06c9e46-b959-4745-af62-14d9d57947f0\",\n  \"firstName\": \"Jordan Rivera\"\n}\n```\n`lastName`, `phone`, `groupId`, etc. are simply absent from the body above — they are\nleft exactly as they are today.\n\n- **Omit a field** to leave it completely unchanged.\n- **Send a field with a value** to set/replace it.\n- **Send a field as explicit `null`** to clear it, where the domain allows it (e.g.\n  `lastName`, `techaeonCode`, `guestCode`). Fields that can never be empty on a guest\n  (`firstName`, `groupId`) reject an explicit `null` with a validation error instead\n  of silently ignoring it.\n- `invitation` and `externalTicket` are the two exceptions to the rule above — they're\n  plain nested objects in the schema (not the omit/value/null tri-state), because\n  there's no separate \"clear\" behavior for either one to distinguish. Omitting the key\n  or sending it as `null` both mean the same thing: leave it untouched. Send an object\n  to create/update one.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `Phone`/`Email` may both be omitted for a status- or Techaeon-only patch — the\n  guest's current contact info is kept. If a patch would leave the guest with neither\n  Phone nor Email (e.g. explicitly nulling both), the request is rejected with\n  `PHONE_OR_EMAIL_REQUIRED`.\n- `TechaeonCode`: omit to leave the current mapping untouched, send an explicit\n  `null` to detach it, or send a new code to validate and link it. Changing the\n  Techaeon code is only allowed while the guest's invitation status is `CREATED`,\n  `SENT`, or `VIEWED`.\n- `Invitation` is matched to the guest automatically (a guest has at most one active\n  invitation) — you don't need to know its Id. Omit `Invitation` entirely to leave it\n  untouched; within it, omit individual fields (e.g. send only `statusId`) to leave\n  them unchanged too. `Invitation.DesignMappingId` is required only the first time an\n  invitation is created for a guest that doesn't have one yet.\n- If `Phone`/`Email` changes, the invitation's QR code is regenerated.\n- If the invitation status changes without an explicit `TechaeonCode`, a Techaeon is\n  automatically generated for the new status.\n- `CustomFields` is optional and is **not** part of the omit/value/null tri-state above\n  — it's a plain object keyed by custom field definition id. Omit `CustomFields` entirely\n  to touch no custom fields at all. Include it to merge exactly the keys present: a\n  value sets/replaces that field, an explicit `null` clears it. Keys not mentioned are\n  left untouched, same as every other field this endpoint doesn't receive.\n\n**Invitation statuses:** `Invitation.StatusId` is the `Id` of a status from `GET /portal/invitation/status/list`.\n\n**Valid Invitation Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Invitation created but not yet sent. |\n| `SENT` | Invitation has been sent to the guest. |\n| `VIEWED` | Guest has viewed the invitation. |\n| `ACCEPTED` | Guest has accepted the invitation. |\n| `DECLINED` | Guest has declined the invitation. |\n| `VOIDED` | Invitation has been voided. |\n| `EXPIRED` | Invitation has expired. |\n| `ADMITTED` | Guest has been admitted to the event. |\n| `CANCELLED` | Invitation has been cancelled. |\n| `PURCHASED` | Invitation is linked to a purchased/external ticket. |",
         "operationId": "AeonPassEventAPIEndPointsGuestsPortalPortalPatchGuestEndPoint",
         "parameters": [
           {
@@ -623,7 +1154,7 @@
           "Portal"
         ],
         "summary": "Update existing guest details.",
-        "description": "Updates an existing guest's details and, optionally, their invitation.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `FirstName` is required, and at least one of `Phone` or `Email` must be provided.\n- `GroupId` is required. Valid guest group IDs can be retrieved via `GET /portal/guest-group/{OrganizationId}/list`.\n- Rejects the request if the new `Phone`/`Email` already belongs to a different guest in the same event.\n- If `GuestCode` is changed, the new code must not already be used by a different guest in any event.\n- If `TechaeonCode` is changed, it is validated against the event. The Techaeon code can only be changed while the guest's invitation status is `CREATED`, `SENT`, or `VIEWED` — once the guest has progressed further (e.g. `ACCEPTED`, `ADMITTED`, `PURCHASED`), the code is locked and the request is rejected.\n- If `Invitation` is included and it exists for this guest, its details (passes, quantity, design, status) are updated.\n- If `Phone`/`Email` changes, the invitation's QR code is regenerated.\n- If the invitation status changes without an explicit `TechaeonCode`, a Techaeon is automatically generated for the new status.\n- If `IsExternalTicket` is set, the associated external ticket order is updated.\n- `CustomFields` is optional, keyed by custom field definition id. Only the keys present are validated and written — omit `CustomFields` entirely to leave every existing custom field value untouched. This is a full replace of the guest overall, but custom field values are always merged by key, never wholesale-replaced.\n\n**Valid Invitation Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Invitation created but not yet sent. |\n| `SENT` | Invitation has been sent to the guest. |\n| `VIEWED` | Guest has viewed the invitation. |\n| `ACCEPTED` | Guest has accepted the invitation. |\n| `DECLINED` | Guest has declined the invitation. |\n| `VOIDED` | Invitation has been voided. |\n| `EXPIRED` | Invitation has expired. |\n| `ADMITTED` | Guest has been admitted to the event. |\n| `CANCELLED` | Invitation has been cancelled. |\n| `PURCHASED` | Invitation is linked to a purchased/external ticket. |",
+        "description": "Updates an existing guest's details and, optionally, their invitation.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `FirstName` is required, and at least one of `Phone` or `Email` must be provided.\n- `GroupId` is required. Valid guest group IDs can be retrieved via `GET /portal/guest-group/{OrganizationId}/list`.\n- Rejects the request if the new `Phone`/`Email` already belongs to a different guest in the same event.\n- If `GuestCode` is changed, the new code must not already be used by a different guest in any event.\n- If `TechaeonCode` is changed, it is validated against the event. The Techaeon code can only be changed while the guest's invitation status is `CREATED`, `SENT`, or `VIEWED` — once the guest has progressed further (e.g. `ACCEPTED`, `ADMITTED`, `PURCHASED`), the code is locked and the request is rejected.\n- If `Invitation` is included and it exists for this guest, its details (passes, quantity, design, status) are updated. `Invitation.DesignMappingId` and `Invitation.StatusId` are optional: left out, the invitation keeps its current design mapping and status. A given `Invitation.StatusId` must be an existing status (otherwise `404`). To create or change only the invitation, use `POST`/`PUT /portal/guest/{GuestId}/invitation`.\n- If `Phone`/`Email` changes, the invitation's QR code is regenerated.\n- If the invitation status changes without an explicit `TechaeonCode`, a Techaeon is automatically generated for the new status.\n- If `IsExternalTicket` is set, the associated external ticket order is updated.\n- `CustomFields` is optional, keyed by custom field definition id. Only the keys present are validated and written — omit `CustomFields` entirely to leave every existing custom field value untouched. This is a full replace of the guest overall, but custom field values are always merged by key, never wholesale-replaced.\n\n**Invitation statuses:** `Invitation.StatusId` is the `Id` of a status from `GET /portal/invitation/status/list`.\n\n**Valid Invitation Status Codes:**\n| Code | Description |\n|------|-------------|\n| `CREATED` | Invitation created but not yet sent. |\n| `SENT` | Invitation has been sent to the guest. |\n| `VIEWED` | Guest has viewed the invitation. |\n| `ACCEPTED` | Guest has accepted the invitation. |\n| `DECLINED` | Guest has declined the invitation. |\n| `VOIDED` | Invitation has been voided. |\n| `EXPIRED` | Invitation has expired. |\n| `ADMITTED` | Guest has been admitted to the event. |\n| `CANCELLED` | Invitation has been cancelled. |\n| `PURCHASED` | Invitation is linked to a purchased/external ticket. |",
         "operationId": "AeonPassEventAPIEndPointsGuestsPortalPortalUpdateGuestEndPoint",
         "parameters": [
           {
@@ -749,6 +1280,48 @@
           }
         ]
       }
+    },
+    "/api/portal/invitation/status/list": {
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "List the invitation statuses.",
+        "description": "Returns every active invitation status (`DisplayOrder` is the order to show them in). Use a status's `Id` as the invitation\n`StatusId` (`PUT /portal/guest/{GuestId}/invitation`, `PUT /portal/guest/{Id}`, `PATCH /portal/guest/{Id}`);\n`StatusCode` is what guest and invitation responses report.\n\nInvitation statuses are master data — the same for every organization — so the list does not depend on the\nAPI key's organization. The IDs are stable and safe to cache.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassEventAPIEndPointsInvitationsPortalPortalListInvitationStatusEndPoint",
+        "responses": {
+          "200": {
+            "description": "Every invitation status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PortalListInvitationStatusEndPointResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -814,6 +1387,182 @@
           },
           "techaeonCode": {
             "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "PortalCreateInvitationEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "guestId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "designMappingId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "guestPasses": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "isUnlimited": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "statusId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "statusName": {
+            "type": "string",
+            "nullable": true
+          },
+          "statusCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "isExternalTicket": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PortalCreateInvitationEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "eventId"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "format": "guid",
+            "minLength": 1
+          },
+          "designMappingId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "guestPasses": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "isUnlimited": {
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "PortalListInvitationStatusEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "statusName": {
+            "type": "string"
+          },
+          "statusCode": {
+            "type": "string"
+          },
+          "displayOrder": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        }
+      },
+      "PortalUpdateInvitationEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "guestId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "designMappingId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "guestPasses": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "isUnlimited": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "statusId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "statusName": {
+            "type": "string",
+            "nullable": true
+          },
+          "statusCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "isExternalTicket": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PortalUpdateInvitationEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "eventId"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "format": "guid",
+            "minLength": 1
+          },
+          "designMappingId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "statusId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "guestPasses": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "isUnlimited": {
+            "type": "boolean",
             "nullable": true
           }
         }
@@ -1626,7 +2375,8 @@
           },
           "designMappingId": {
             "type": "string",
-            "format": "guid"
+            "format": "guid",
+            "nullable": true
           },
           "guestPasses": {
             "type": "integer",
@@ -1863,7 +2613,8 @@
           },
           "designMappingId": {
             "type": "string",
-            "format": "guid"
+            "format": "guid",
+            "nullable": true
           },
           "guestPasses": {
             "type": "integer",
@@ -1971,8 +2722,7 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "id",
-          "designMappingId"
+          "id"
         ],
         "properties": {
           "id": {
@@ -1983,7 +2733,7 @@
           "designMappingId": {
             "type": "string",
             "format": "guid",
-            "minLength": 1
+            "nullable": true
           },
           "guestPasses": {
             "type": "integer",
@@ -3109,6 +3859,118 @@
             "description": "How many extra guests each guest may bring; null for no limit, cannot be negative.",
             "format": "int32",
             "nullable": true
+          }
+        }
+      },
+      "CreateDesignMappingEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "designId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "guid"
+          }
+        }
+      },
+      "GetDesignMappingEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "designId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "guid"
+          }
+        }
+      },
+      "ListDesignMappingEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "designId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "guid"
+          }
+        }
+      },
+      "UpdateDesignMappingEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "designId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "eventId": {
+            "type": "string",
+            "format": "guid"
+          }
+        }
+      },
+      "PortalCreateDesignMappingEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "designId",
+          "eventId"
+        ],
+        "properties": {
+          "designId": {
+            "type": "string",
+            "format": "guid",
+            "minLength": 1
+          },
+          "eventId": {
+            "type": "string",
+            "format": "guid",
+            "minLength": 1
+          }
+        }
+      },
+      "PortalUpdateDesignMappingEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "eventId",
+          "designId"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "format": "guid",
+            "minLength": 1
+          },
+          "designId": {
+            "type": "string",
+            "format": "guid",
+            "minLength": 1
           }
         }
       }

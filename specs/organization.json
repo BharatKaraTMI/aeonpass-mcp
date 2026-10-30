@@ -17,7 +17,7 @@
           "Portal"
         ],
         "summary": "Create a new contact.",
-        "description": "Creates a new contact for an organization.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `FirstName` is required.\n- If the contact's `Phone`/`Email` matches an existing platform user, the contact is automatically linked to that user account.\n- `ProfilePhoto`, if provided, is uploaded and its URL is stored on the contact.",
+        "description": "Creates a new contact for an organization.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `FirstName` is required.\n- If the contact's `Phone`/`Email` matches an existing platform user, the contact is automatically linked to that user account.\n- `ProfilePhoto`, if provided, is uploaded and its URL is stored on the contact.\n- `CustomFields` is optional, keyed by custom field definition id (see AeonPassGlobal's\n  `GET /portal/custom-fields?entityType=CONTACT`). Every currently-`ACTIVE` mandatory\n  field must be included. Omit `CustomFields` entirely to skip custom fields altogether.\n\n**Example request** (`multipart/form-data`, not JSON — `CustomFields` is itself a\nJSON-encoded string field, one among the others, keyed by definition id and never by\n`fieldKey`):\n```bash\ncurl -X POST \"https://<gateway-host>/api/portal/contact\" \\\\\n  -H \"X-API-KEY: <your API key>\" \\\\\n  -F \"FirstName=Jane\" \\\\\n  -F \"LastName=Doe\" \\\\\n  -F \"Email=jane@example.com\" \\\\\n  -F \"Phone=+12025550191\" \\\\\n  -F 'CustomFields={\"<definitionId>\":\"value\"}'\n```",
         "operationId": "AeonPassOrganizationAPIEndPointsContactsPortalPortalCreateContactEndPoint",
         "requestBody": {
           "x-name": "PortalCreateContactEndPointRequest",
@@ -130,7 +130,7 @@
           "Portal"
         ],
         "summary": "Update contact.",
-        "description": "Updates an existing contact's details.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `FirstName` is required.\n- `ProfilePhoto`, if provided, replaces the contact's existing profile photo.",
+        "description": "Updates an existing contact's details.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior:**\n- `FirstName` is required. This is a full replace of the contact's standard fields —\n  any field you omit from the form is cleared, so always send every field, not just the\n  ones changing.\n- `ProfilePhoto`, if provided, replaces the contact's existing profile photo.\n- `CustomFields` is optional, keyed by custom field definition id (see AeonPassGlobal's\n  `GET /portal/custom-fields?entityType=CONTACT`). Only the keys present are validated\n  and written — omit `CustomFields` entirely to leave every existing custom field value\n  untouched; unlike the standard fields above, custom field values are always merged by\n  key, never wholesale-replaced. A value of `null` for a key clears that key.\n\n**Example request** (`multipart/form-data`, not JSON — `CustomFields` is itself a\nJSON-encoded string field, one among the others, keyed by definition id and never by\n`fieldKey`):\n```bash\ncurl -X PUT \"https://<gateway-host>/api/portal/contact/{id}\" \\\\\n  -H \"X-API-KEY: <your API key>\" \\\\\n  -F \"FirstName=Jane\" \\\\\n  -F \"LastName=Doe\" \\\\\n  -F \"Email=jane@example.com\" \\\\\n  -F \"Phone=+12025550191\" \\\\\n  -F 'CustomFields={\"<definitionId>\":\"value\"}'\n```",
         "operationId": "AeonPassOrganizationAPIEndPointsContactsPortalPortalUpdateContactEndPoint",
         "parameters": [
           {
@@ -149,6 +149,56 @@
             "multipart/form-data": {
               "schema": {
                 "$ref": "#/components/schemas/PortalUpdateContactEndPointRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/contact/{Id}/custom-fields": {
+      "put": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Set custom field values on a contact.",
+        "description": "Writes custom field values on an existing contact, leaving every other field on the\ncontact untouched. A plain-JSON path for integrations (CRM sync, cross-org migration)\nthat only need to write enrichment data and can't reasonably construct a\nmultipart/form-data request the way `POST`/`PUT /portal/contact` require (`ProfilePhoto`\nforces those onto multipart).\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Behavior**\n- `CustomFields` is keyed by custom field definition id (see AeonPassGlobal's\n  `GET /portal/custom-fields?entityType=CONTACT`). Only the keys present are validated\n  and written — a definition that's mandatory but not included here is never enforced\n  retroactively, matching `PUT /portal/contact/{id}`'s own partial-update rule for\n  custom fields.\n- A value of `null` for a key clears that key entirely. Omit a key to leave its current\n  value untouched.\n- Values are merged by key into the contact's existing custom field values — this call\n  never wholesale-replaces the set.\n\n**Response `200`** — the contact (`ContactDto`), with its updated `customFields`.\n\n**Error codes (`400`)**\n\n| Code | Cause |\n|---|---|\n| `CUSTOM_FIELD_VALUE_INVALID` | A submitted value fails validation for its field's data type or rules. |\n\n**`404`** if the contact doesn't exist, or belongs to a different organization.",
+        "operationId": "AeonPassOrganizationAPIEndPointsContactsPortalPortalSetContactCustomFieldsEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "PortalSetContactCustomFieldsEndPointRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalSetContactCustomFieldsEndPointRequest"
               }
             }
           },
@@ -451,10 +501,846 @@
           }
         ]
       }
+    },
+    "/api/portal/techaeon-design": {
+      "post": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Create a reusable techaeon design.",
+        "description": "Creates a techaeon design in the API key's organization. Creating a design does not put it on an event — set it as\nan event's design with `POST /portal/design-mapping`.\n\n**Authentication:** Include `X-API-KEY` in the request header. Designs belong to the API key's organization — the\norganization is never taken from the request.\n\n**Reusable designs:** a techaeon design belongs to the organization, not to an event, which is why it lives in the\nOrganization service. Create it once and use it on any of the organization's events: set it as an event's design\nwith `POST /portal/design-mapping`, or change an event's design to it with `PUT /portal/design-mapping/{Id}`\n(Event service). `GET /portal/event/{Id}` returns the event's design as `DesignMappingId` and `DesignId`.\n\n**Behavior:**\n- `ImageUrl` is required; `ShapeId` and `ColorId` are optional.\n- The response is the created design; its `Id` is the `DesignId` to send to `POST /portal/design-mapping`.\n- A design created moments ago may take a few seconds to become usable on events.\n\n**`ImageUrl`:** upload the image first with `POST /portal/techaeon-design/upload-images` and send the returned `Url`.\n\n**`ShapeId` / `ColorId`:** the `Id` of an active shape from `GET /portal/techaeon-design/shapes` and of an active\ncolor from `GET /portal/techaeon-design/colors`. An unknown one returns `404`.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid (e.g. a route id that is not a GUID). |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The design (in the API key's organization), shape or color does not exist, or was deleted. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassOrganizationAPIEndPointsTechaeonDesignsPortalPortalCreateDesignEndPoint",
+        "requestBody": {
+          "x-name": "PortalCreateDesignEndPointRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalCreateDesignEndPointRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "The created design.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateDesignEndPointResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A required field is missing or invalid."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "`ShapeId` or `ColorId` is not an active shape or color."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/techaeon-design/{id}": {
+      "delete": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Delete a reusable techaeon design.",
+        "description": "Deletes a techaeon design of the API key's organization. Design id is required in the route param. This is a soft\ndelete — the design is marked inactive, never physically removed.\n\n**Authentication:** Include `X-API-KEY` in the request header. Designs belong to the API key's organization — the\norganization is never taken from the request.\n\n**Organization scope:** a design of another organization returns `404`, exactly like a design that does not exist.\nA deleted design returns `404` too.\n\n**Behavior:**\n- The design can no longer be set as an event's design.\n- Events that use it stop showing it as their design within a few seconds: `GET /portal/design-mapping/{Id}`\n  returns `404` and `GET /portal/design-mapping/{eventId}/list` leaves it out. Give those events another design\n  with `PUT /portal/design-mapping/{Id}`.\n\n**Response:** `204 No Content` on success, with no response body.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid (e.g. a route id that is not a GUID). |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The design (in the API key's organization), shape or color does not exist, or was deleted. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassOrganizationAPIEndPointsTechaeonDesignsPortalPortalDeleteDesignEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The design was deleted."
+          },
+          "400": {
+            "description": "The design id is not a valid GUID."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The design does not exist in the API key's organization, or was already deleted."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Get a reusable techaeon design.",
+        "description": "Returns a single techaeon design of the API key's organization, with its shape and color. Design id is required\nin the route param — e.g. the `DesignId` of an event's design from `GET /portal/event/{Id}`.\n\n**Authentication:** Include `X-API-KEY` in the request header. Designs belong to the API key's organization — the\norganization is never taken from the request.\n\n**Organization scope:** a design of another organization returns `404`, exactly like a design that does not exist.\nA deleted design returns `404` too.\n\n**Reusable designs:** a techaeon design belongs to the organization, not to an event, which is why it lives in the\nOrganization service. Create it once and use it on any of the organization's events: set it as an event's design\nwith `POST /portal/design-mapping`, or change an event's design to it with `PUT /portal/design-mapping/{Id}`\n(Event service). `GET /portal/event/{Id}` returns the event's design as `DesignMappingId` and `DesignId`.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid (e.g. a route id that is not a GUID). |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The design (in the API key's organization), shape or color does not exist, or was deleted. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassOrganizationAPIEndPointsTechaeonDesignsPortalPortalGetTechaeonDesignEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The design.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetTechaeonDesignEndPointResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The design id is not a valid GUID."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The design does not exist in the API key's organization, or was deleted."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Update a reusable techaeon design.",
+        "description": "Replaces the image, shape and color of a techaeon design of the API key's organization. Design id is required in\nthe route param.\n\n**Authentication:** Include `X-API-KEY` in the request header. Designs belong to the API key's organization — the\norganization is never taken from the request.\n\n**Organization scope:** a design of another organization returns `404`, exactly like a design that does not exist.\nA deleted design returns `404` too.\n\n**Reusable designs:** a techaeon design belongs to the organization, not to an event, which is why it lives in the\nOrganization service. Create it once and use it on any of the organization's events: set it as an event's design\nwith `POST /portal/design-mapping`, or change an event's design to it with `PUT /portal/design-mapping/{Id}`\n(Event service). `GET /portal/event/{Id}` returns the event's design as `DesignMappingId` and `DesignId`.\n\n**Behavior:**\n- `ImageUrl` is required.\n- `ShapeId` and `ColorId` are replaced as sent — omitting one clears it. A new one that is not an active shape or\n  color returns `404`.\n- The change applies to every event that uses the design: when `ImageUrl` changes, the tickets of those events\n  are regenerated with the new image.\n- To use a different design on one event only, change that event's design with `PUT /portal/design-mapping/{Id}`\n  instead.\n\n**`ImageUrl`:** upload the image first with `POST /portal/techaeon-design/upload-images` and send the returned `Url`.\n\n**`ShapeId` / `ColorId`:** the `Id` of an active shape from `GET /portal/techaeon-design/shapes` and of an active\ncolor from `GET /portal/techaeon-design/colors`. An unknown one returns `404`.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid (e.g. a route id that is not a GUID). |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The design (in the API key's organization), shape or color does not exist, or was deleted. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassOrganizationAPIEndPointsTechaeonDesignsPortalPortalUpdateDesignEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "PortalUpdateDesignEndPointRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalUpdateDesignEndPointRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "The updated design.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateDesignEndPointResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A required field is missing or invalid."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The design does not exist in the API key's organization, or a new `ShapeId` / `ColorId` is not an active shape or color."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/techaeon-design/color/{id}": {
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Get a techaeon design color.",
+        "description": "Returns a single active techaeon design color. Color id is required in the route param.\n\nShapes and colors are master data — the same for every organization — and are used to build a design.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid (e.g. a route id that is not a GUID). |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The design (in the API key's organization), shape or color does not exist, or was deleted. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassOrganizationAPIEndPointsTechaeonDesignsPortalPortalGetDesignColorEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The color.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetDesignColorEndPointResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The color id is not a valid GUID."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The color does not exist."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/techaeon-design/colors": {
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Fetch list of techaeon design colors.",
+        "description": "Returns every active techaeon design color. Use a color's `Id` as `ColorId` when creating or updating a design.\n\nShapes and colors are master data — the same for every organization — and are used to build a design.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid (e.g. no file on upload, or a file that is too large — `IMAGE_FILE_TOO_LARGE` — or not a valid image — `INVALID_IMAGE_FILE`). |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassOrganizationAPIEndPointsTechaeonDesignsPortalPortalListDesignColorsEndPoint",
+        "responses": {
+          "200": {
+            "description": "The design colors.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ListDesignColorsEndPointResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The API key has no organization."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/techaeon-design/list": {
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Fetch list of the organization's reusable techaeon designs.",
+        "description": "Returns every active techaeon design of the API key's organization, with its shape and color. Pick a design's `Id`\nas the `DesignId` when setting or changing an event's design.\n\n**Authentication:** Include `X-API-KEY` in the request header. Designs belong to the API key's organization — the\norganization is never taken from the request.\n\n**Reusable designs:** a techaeon design belongs to the organization, not to an event, which is why it lives in the\nOrganization service. Create it once and use it on any of the organization's events: set it as an event's design\nwith `POST /portal/design-mapping`, or change an event's design to it with `PUT /portal/design-mapping/{Id}`\n(Event service). `GET /portal/event/{Id}` returns the event's design as `DesignMappingId` and `DesignId`.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid (e.g. no file on upload, or a file that is too large — `IMAGE_FILE_TOO_LARGE` — or not a valid image — `INVALID_IMAGE_FILE`). |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassOrganizationAPIEndPointsTechaeonDesignsPortalPortalListTechaeonDesignsEndPoint",
+        "responses": {
+          "200": {
+            "description": "The organization's designs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ListTechaeonDesignsEndPointResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The API key has no organization."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/techaeon-design/shape/{id}": {
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Get a techaeon design shape.",
+        "description": "Returns a single active techaeon design shape. Shape id is required in the route param. `PathValue` is the\nshape's SVG path.\n\nShapes and colors are master data — the same for every organization — and are used to build a design.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid (e.g. a route id that is not a GUID). |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `404` | The design (in the API key's organization), shape or color does not exist, or was deleted. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassOrganizationAPIEndPointsTechaeonDesignsPortalPortalGetDesignShapeEndPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The shape.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetDesignShapeEndPointResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The shape id is not a valid GUID."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "404": {
+            "description": "The shape does not exist."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/techaeon-design/shapes": {
+      "get": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Fetch list of techaeon design shapes.",
+        "description": "Returns every active techaeon design shape. Use a shape's `Id` as `ShapeId` when creating or updating a design.\n`PathValue` is the shape's SVG path.\n\nShapes and colors are master data — the same for every organization — and are used to build a design.\n\n**Authentication:** Include `X-API-KEY` in the request header.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid (e.g. no file on upload, or a file that is too large — `IMAGE_FILE_TOO_LARGE` — or not a valid image — `INVALID_IMAGE_FILE`). |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassOrganizationAPIEndPointsTechaeonDesignsPortalPortalListDesignShapesEndPoint",
+        "responses": {
+          "200": {
+            "description": "The design shapes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ListDesignShapesEndPointResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The API key has no organization."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
+    },
+    "/api/portal/techaeon-design/upload-images": {
+      "post": {
+        "tags": [
+          "Portal"
+        ],
+        "summary": "Upload techaeon design images.",
+        "description": "Uploads one or more images to storage and returns each image's URL and file information. Send the files as\n`multipart/form-data`, each in a `File` field.\n\n**Authentication:** Include `X-API-KEY` in the request header. Designs belong to the API key's organization — the\norganization is never taken from the request.\n\n**Behavior:**\n- Only image files are accepted: JPEG (`.jpg`, `.jpeg`, `.jpe`, `.jfif`, `.pjpeg`, `.pjp`), PNG (`.png`, `.apng`),\n  GIF (`.gif`), WebP (`.webp`), BMP (`.bmp`, `.dib`), TIFF (`.tif`, `.tiff`), ICO (`.ico`, `.cur`),\n  AVIF (`.avif`), HEIC / HEIF (`.heic`, `.heif`, `.hif`), JPEG XL (`.jxl`), JPEG 2000 (`.jp2`, `.jpx`, `.jpf`,\n  `.jpm`, `.jpg2`, `.j2k`, `.j2c`, `.jpc`) and SVG (`.svg`).\n- Each file can be at most 10 MB; a larger file is rejected with `400` (`IMAGE_FILE_TOO_LARGE`).\n- A file's format is recognised from its content, not from its name or content type, and its extension must\n  match that format. An empty file, a non-image file (e.g. `.txt` or `.pdf`), or an image under another format's\n  extension is rejected with `400` (`INVALID_IMAGE_FILE`).\n- If any file is rejected, nothing is uploaded.\n- SVG files must be well-formed and free of active content (scripts, event handlers, embedded documents,\n  `javascript:` links).\n- Each file is stored under a new, generated file name with its format's content type (the `ContentType` in the\n  response); `FileName` in the response is the original name.\n- Use a returned `Url` as `ImageUrl` when creating or updating a design. Uploading alone does not create a design.\n\n**Errors:**\n| Status | When |\n|--------|------|\n| `400` | A required field is missing or invalid (e.g. no file on upload, or a file that is too large — `IMAGE_FILE_TOO_LARGE` — or not a valid image — `INVALID_IMAGE_FILE`). |\n| `401` | No key, or the key is invalid, expired or blocked, or its organization is no longer active. |\n| `403` | The key's IP or origin restriction refused the call. |\n| `429` | Rate limit exceeded — retry after the `Retry-After` header. |\n| `503` | Key validation is temporarily unavailable — retry later. |",
+        "operationId": "AeonPassOrganizationAPIEndPointsTechaeonDesignsPortalPortalUploadTechaeonImageEndPoint",
+        "requestBody": {
+          "x-name": "PortalUploadTechaeonImageEndPointRequest",
+          "description": "",
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalUploadTechaeonImageEndPointRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "One entry per uploaded file.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UploadTechaeonImageEndPointResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No file was sent, a file is too large (`IMAGE_FILE_TOO_LARGE`), or a file is not a valid image (`INVALID_IMAGE_FILE`)."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or blocked API key, or the key's organization is not active."
+          },
+          "403": {
+            "description": "Refused by the key's IP or origin restriction."
+          },
+          "429": {
+            "description": "Rate limit exceeded."
+          },
+          "503": {
+            "description": "Key validation temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "X-API-KEY": []
+          }
+        ]
+      }
     }
   },
   "components": {
     "schemas": {
+      "CreateDesignEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "shapeId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "shapeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "pathValue": {
+            "type": "string",
+            "nullable": true
+          },
+          "colorId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "colorName": {
+            "type": "string",
+            "nullable": true
+          },
+          "rgbValue": {
+            "type": "string",
+            "nullable": true
+          },
+          "imageUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "GetDesignColorEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "colorName": {
+            "type": "string"
+          },
+          "rgbValue": {
+            "type": "string"
+          }
+        }
+      },
+      "GetDesignShapeEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "shapeName": {
+            "type": "string"
+          },
+          "pathValue": {
+            "type": "string"
+          }
+        }
+      },
+      "GetTechaeonDesignEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "shapeId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "shapeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "pathValue": {
+            "type": "string",
+            "nullable": true
+          },
+          "colorId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "colorName": {
+            "type": "string",
+            "nullable": true
+          },
+          "rgbValue": {
+            "type": "string",
+            "nullable": true
+          },
+          "imageUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ListDesignColorsEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "colorName": {
+            "type": "string"
+          },
+          "rgbValue": {
+            "type": "string"
+          }
+        }
+      },
+      "ListDesignShapesEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "shapeName": {
+            "type": "string"
+          },
+          "pathValue": {
+            "type": "string"
+          }
+        }
+      },
+      "ListTechaeonDesignsEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "shapeId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "shapeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "pathValue": {
+            "type": "string",
+            "nullable": true
+          },
+          "colorId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "colorName": {
+            "type": "string",
+            "nullable": true
+          },
+          "rgbValue": {
+            "type": "string",
+            "nullable": true
+          },
+          "imageUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "UpdateDesignEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "guid"
+          },
+          "shapeId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "shapeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "pathValue": {
+            "type": "string",
+            "nullable": true
+          },
+          "colorId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "colorName": {
+            "type": "string",
+            "nullable": true
+          },
+          "rgbValue": {
+            "type": "string",
+            "nullable": true
+          },
+          "imageUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "UploadTechaeonImageEndPointResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "contentType": {
+            "type": "string"
+          }
+        }
+      },
+      "PortalCreateDesignEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "imageUrl"
+        ],
+        "properties": {
+          "shapeId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "colorId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "imageUrl": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "PortalUpdateDesignEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "imageUrl"
+        ],
+        "properties": {
+          "shapeId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "colorId": {
+            "type": "string",
+            "format": "guid",
+            "nullable": true
+          },
+          "imageUrl": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "PortalUploadTechaeonImageEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "file"
+        ],
+        "properties": {
+          "file": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "binary"
+            }
+          }
+        }
+      },
       "PortalListGuestGroupsEndPointResponse": {
         "type": "object",
         "additionalProperties": false,
@@ -928,6 +1814,16 @@
             "items": {
               "$ref": "#/components/schemas/CommunicationType"
             }
+          }
+        }
+      },
+      "PortalSetContactCustomFieldsEndPointRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "customFields": {
+            "type": "object",
+            "additionalProperties": {}
           }
         }
       },

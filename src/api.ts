@@ -133,7 +133,8 @@ export interface ClientOptions {
 
 /**
  * Records the *shape* of arguments for calls where that matters after the fact
- * — bulk sends, deletes, chat sends, and custom field changes. Deliberately omits message bodies,
+ * — bulk sends, deletes, chat sends, invitation and design changes, and custom
+ * field changes. Deliberately omits message bodies,
  * recipient lists, attachments and contact records: those are the PII, and
  * logs are not the place for them.
  */
@@ -164,7 +165,24 @@ function callMeta(method: string, args: unknown[]): Record<string, unknown> | un
     case "deleteTechaeon":
     case "deleteContact":
     case "deleteCustomField":
+    case "deleteTechaeonDesign":
+    case "deleteDesignMapping":
       return { id: a };
+    // A design swap regenerates every ticket on the mapping.
+    case "updateDesignMapping":
+      return { id: a, eventId: b?.eventId, designId: b?.designId };
+    case "uploadDesignImages":
+      return {
+        files: a?.files?.length ?? 0,
+        types: a?.files?.map((f: any) => f?.fileType ?? "unknown"),
+      };
+    // A status change mints a techaeon, so it is what to trace.
+    case "createInvitation":
+    case "updateInvitation":
+      return { guestId: a, eventId: b?.eventId, fields: Object.keys((b as object) ?? {}), statusId: b?.statusId };
+    // Definition ids only — the values are contact data.
+    case "setContactCustomFields":
+      return { id: a, fields: Object.keys((b as object) ?? {}) };
     // Definitions are schema, not PII, but a status change or a shape edit past
     // DRAFT is what you would want to trace afterwards.
     case "changeCustomFieldStatus":
@@ -440,6 +458,111 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
       return request("GET", "/api/portal/techaeon/group/list", undefined, query);
     },
 
+    // ── Techaeon designs ──
+    //
+    // The artwork an invitation or ticket is rendered with: an uploaded image,
+    // optionally framed by a shape and a color. Designs belong to the key's
+    // organization; shapes and colors are master data, the same for everyone.
+    // A design reaches an event only through a design mapping (below), and the
+    // mapping's id — not the design's — is the `designMappingId` invitations
+    // take. All reads return bare arrays, not the paged `{ data, pagination }`.
+
+    listTechaeonDesigns() {
+      return request("GET", "/api/portal/techaeon-design/list");
+    },
+
+    getTechaeonDesign(id: string) {
+      return request("GET", `/api/portal/techaeon-design/${id}`);
+    },
+
+    /** `imageUrl` must come from `uploadDesignImages`. An unknown shape or color is a 404. */
+    createTechaeonDesign(params: { imageUrl: string; shapeId?: string; colorId?: string }) {
+      return request("POST", "/api/portal/techaeon-design", params);
+    },
+
+    /**
+     * A full replace: `shapeId` and `colorId` left out are *cleared*. Applies
+     * to every event using the design; a new `imageUrl` regenerates their
+     * tickets.
+     */
+    updateTechaeonDesign(id: string, params: { imageUrl: string; shapeId?: string; colorId?: string }) {
+      return request("PUT", `/api/portal/techaeon-design/${id}`, params);
+    },
+
+    deleteTechaeonDesign(id: string) {
+      return request("DELETE", `/api/portal/techaeon-design/${id}`);
+    },
+
+    /**
+     * Stores the images and returns `[{ url, fileName, contentType }]`; it does
+     * not create a design. Images only, ≤10 MB each, format sniffed from the
+     * bytes and required to match the extension — so `fileName` matters here.
+     * All-or-nothing. Base64 in, for the reasons on `uploadMessageDocs`.
+     */
+    uploadDesignImages(params: {
+      files: Array<{ fileName: string; fileType?: string; contentBase64: string }>;
+    }) {
+      const form = new FormData();
+      for (const f of params.files) {
+        const bytes = Uint8Array.from(atob(f.contentBase64), (ch) => ch.charCodeAt(0));
+        form.append("File", new Blob([bytes], { type: f.fileType || "application/octet-stream" }), f.fileName);
+      }
+      return multipartRequest("POST", "/api/portal/techaeon-design/upload-images", form);
+    },
+
+    listDesignColors() {
+      return request("GET", "/api/portal/techaeon-design/colors");
+    },
+
+    getDesignColor(id: string) {
+      return request("GET", `/api/portal/techaeon-design/color/${id}`);
+    },
+
+    listDesignShapes() {
+      return request("GET", "/api/portal/techaeon-design/shapes");
+    },
+
+    getDesignShape(id: string) {
+      return request("GET", `/api/portal/techaeon-design/shape/${id}`);
+    },
+
+    // ── Design mappings ──
+    //
+    // An event's design: one of the org's reusable designs put on the event.
+    // Exactly one per event (enforced since 29 Oct, late): create on an event
+    // that has one is `EVENT_DESIGN_ALREADY_SET`; change it with update, whose
+    // id — the event's `designMappingId` — never moves. After a delete, or once
+    // its design is deleted, the event has no design (`get_event` → null) and
+    // new invitations get none; existing ones keep the removed mapping. Older
+    // events may still hold several, listed newest first, the first being the
+    // event's design. A mapping whose design was deleted reads as a 404 but can
+    // still be updated or deleted.
+
+    createDesignMapping(params: { designId: string; eventId: string }) {
+      return request("POST", "/api/portal/design-mapping", params);
+    },
+
+    getDesignMapping(id: string) {
+      return request("GET", `/api/portal/design-mapping/${id}`);
+    },
+
+    listDesignMappings(eventId: string) {
+      return request("GET", `/api/portal/design-mapping/${eventId}/list`);
+    },
+
+    /**
+     * Swaps the design for this event only; `eventId` must be the mapping's
+     * own (it cannot move). Invitations on the mapping switch to the new
+     * design, and their tickets are regenerated.
+     */
+    updateDesignMapping(id: string, params: { eventId: string; designId: string }) {
+      return request("PUT", `/api/portal/design-mapping/${id}`, params);
+    },
+
+    deleteDesignMapping(id: string) {
+      return request("DELETE", `/api/portal/design-mapping/${id}`);
+    },
+
     // ── Events ──
 
     getEvent(id: string) {
@@ -569,9 +692,9 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
      * Every currently-ACTIVE mandatory GUEST custom field must be in `customFields`.
      *
      * `invitation.designMappingId` is optional: left out, the event's design is
-     * used, or none when the event has no design — which is every event made
-     * through `createEvent`, so `invitation: {}` is the only way to invite a
-     * guest to one.
+     * used, or none when the event has no design. An event made through
+     * `createEvent` starts without one; give it one with `createDesignMapping`.
+     * Omit `invitation` and add it later with `createInvitation`.
      */
     createGuest(params: {
       eventId: string;
@@ -638,9 +761,11 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
         isUpdateAllEvent?: boolean;
         techaeonCode?: string;
         guestCode?: string;
+        // `designMappingId` and `statusId` left out keep their current value
+        // (dev, 29 Oct 2026 — `designMappingId` used to be required here).
         invitation?: {
           id: string;
-          designMappingId: string;
+          designMappingId?: string;
           guestPasses?: number;
           isUnlimited?: boolean;
           statusId?: string;
@@ -688,6 +813,48 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
       }
     ) {
       return request("PATCH", `/api/portal/guest/${id}`, params);
+    },
+
+    // ── Invitations ──
+    //
+    // A guest holds at most one invitation. These two endpoints manage it on
+    // its own, without resending the guest. `eventId` is required on both and
+    // must be the guest's own event; anything else is a 404.
+
+    /**
+     * For a guest added without one — a second is `INVITATION_ALREADY_EXISTS`.
+     * Starts as CREATED with a QR code. `designMappingId` falls back to the
+     * event's design, or none.
+     */
+    createInvitation(
+      guestId: string,
+      params: { eventId: string; designMappingId?: string; guestPasses?: number; isUnlimited?: boolean }
+    ) {
+      return request("POST", `/api/portal/guest/${guestId}/invitation`, params);
+    },
+
+    /**
+     * `guestPasses` and `isUnlimited` are *replaced* — left out, passes are
+     * cleared and unlimited is false. `designMappingId` and `statusId` left
+     * out are kept. A status change generates a techaeon for the new status.
+     * 404 when the guest has no invitation yet.
+     */
+    updateInvitation(
+      guestId: string,
+      params: {
+        eventId: string;
+        designMappingId?: string;
+        statusId?: string;
+        guestPasses?: number;
+        isUnlimited?: boolean;
+      }
+    ) {
+      return request("PUT", `/api/portal/guest/${guestId}/invitation`, params);
+    },
+
+    /** Master data: `[{ id, statusName, statusCode, displayOrder }]`, the same for every org. */
+    listInvitationStatuses() {
+      return request("GET", "/api/portal/invitation/status/list");
     },
 
     deleteGuest(id: string, invitationId?: string) {
@@ -776,6 +943,17 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
         ...fields,
         customFields: customFields && JSON.stringify(customFields),
       });
+    },
+
+    /**
+     * Plain-JSON write of custom field values alone — every standard field is
+     * left untouched, unlike `updateContact`, which clears any it is not sent.
+     * Same rules otherwise: keyed by CONTACT definition id, merged by key,
+     * `null` clears one, and only the keys sent are validated (a mandatory
+     * field left out is not enforced). Returns the contact.
+     */
+    setContactCustomFields(id: string, customFields: Record<string, unknown>) {
+      return request("PUT", `/api/portal/contact/${id}/custom-fields`, { customFields });
     },
 
     deleteContact(id: string) {
@@ -1037,8 +1215,8 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
     // The Global API's `/api/portal/custom-fields` surface: per-organization
     // field definitions for a record type (`GUEST`, `CONTACT`, `EVENT`,
     // `ORGANIZATION`, `TECHAEON`). Values live on the record itself — today
-    // that is the guest and contact endpoints' `customFields`, keyed by
-    // definition id.
+    // that is the guest and contact endpoints' `customFields`, plus
+    // `setContactCustomFields`, all keyed by definition id.
     //
     // `DRAFT` is the status that matters: while a field holds it, any shape
     // change is allowed. Past it, changing `dataType` or `cardinality`, turning
@@ -1165,7 +1343,7 @@ export function createClient(apiKey: string, options: ClientOptions = {}) {
     },
   };
 
-  // Wrap every method once rather than at 57 call sites. Failures are recorded
+  // Wrap every method once rather than at 76 call sites. Failures are recorded
   // and rethrown — logging must never change behaviour.
   const instrumented = Object.fromEntries(
     Object.entries(methods).map(([name, fn]) => [

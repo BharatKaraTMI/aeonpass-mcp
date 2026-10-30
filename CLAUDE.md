@@ -1,7 +1,7 @@
 # CLAUDE.md — aeonpass-mcp
 
 ## What this is
-MCP server for the Aeon Pass platform API. Exposes techaeons, events and guests, event/invitation lookups by person, contacts, chat, and custom field definitions as MCP tools so Claude Code can query and manage them directly.
+MCP server for the Aeon Pass platform API. Exposes techaeons and their designs, events and guests, invitations, event/invitation lookups by person, contacts, chat, and custom field definitions as MCP tools so Claude Code can query and manage them directly.
 
 Deployed at **https://mcp.aeonpass.com/mcp** (Vercel, fronted by Cloudflare DNS
 in DNS-only mode — the proxy would buffer this transport's SSE stream). Callers
@@ -20,7 +20,7 @@ parameter, not a module-level env read, so each transport decides where it
 comes from.
 
 ```
-src/api.ts     createClient(apiKey) → all 57 API calls bound to that key
+src/api.ts     createClient(apiKey) → all 76 API calls bound to that key
 src/realtime.ts SignalR chat subscriptions, keyed by sha256(apiKey) + scope
 src/server.ts  createServer(client, opts) → registers the tools
 src/app.ts     Hono app; reads X-API-KEY per request
@@ -45,7 +45,7 @@ report a dead connection.
 
 ## Logging
 
-`createClient` wraps all 57 methods and emits one JSON line per call to
+`createClient` wraps all 76 methods and emits one JSON line per call to
 **stderr** — stdout belongs to the stdio transport's JSON-RPC frames, so writing
 there corrupts the protocol.
 
@@ -103,6 +103,51 @@ All tools call the Aeon Pass gateway at `https://apv2-gatewayapp-prod-westus3.az
 | `create_group` | Create group + bulk-generate techaeons |
 | `update_group` | Update group config |
 
+**Techaeon designs & design mappings** (dev only, 29 Oct 2026)
+| Tool | Description |
+|------|-------------|
+| `list_techaeon_designs` | The org's active designs (bare array, not paged) |
+| `get_techaeon_design` | One design, with shape and color |
+| `upload_techaeon_design_images` | Upload artwork → `[{ url, fileName, contentType }]` |
+| `create_techaeon_design` | Design from an uploaded `imageUrl` + optional shape/color |
+| `update_techaeon_design` | Full replace — omitted shape/color are CLEARED |
+| `delete_techaeon_design` | Soft-delete; its mappings drop out of the list |
+| `list_design_colors` / `get_design_color` | Color master data (`rgbValue` is a JSON string) |
+| `list_design_shapes` / `get_design_shape` | Shape master data (`pathValue` is an SVG path) |
+| `create_design_mapping` | Map a design to an event → the `designMappingId` invitations take |
+| `get_design_mapping` | One mapping `{ id, designId, eventId }` |
+| `list_design_mappings` | An event's active mappings |
+| `update_design_mapping` | Swap the design (tickets regenerate); cannot move events |
+| `delete_design_mapping` | Soft-delete; the design is kept |
+
+Designs are **reusable and belong to the organization**; a design mapping is
+an *event's design*. The chain is upload image → create design → set it on the
+event with `create_design_mapping` → that mapping id is the event's
+`designMappingId` (`get_event` returns it with `designId`), which invitations
+default to. This closes the old gap where an API-created event could never get
+a design. Shapes and colors are master data; designs and mappings are scoped to
+the key's org (another org's is a 404). A design made moments ago can take a
+few seconds to be accepted by `create_design_mapping`.
+
+Revised twice the same evening (29 Oct, dev). **An event has exactly one
+design**, enforced: `create_design_mapping` on an event that has one is
+`400 EVENT_DESIGN_ALREADY_SET` (it used to store a second mapping, after which
+`get_event`'s design flipped to whichever mapping was least recently modified).
+`update_design_mapping` changes it in place — the event's `designMappingId`
+never moves, and resending the current `designId` is a no-op. After
+`delete_design_mapping`, or once the design itself is deleted, `get_event`
+returns `designMappingId`/`designId` **null** and new invitations get none
+(it used to keep reporting the deleted mapping); existing invitations keep the
+removed one. Events from before the rule may still hold several mappings:
+`list_design_mappings` lists them newest first and the first is the event's
+design. Per the spec, the same rule now applies in the web app. `update_techaeon_design` changes the design on *every*
+event using it; `update_design_mapping` changes one event. Deleting a design
+drops it from those events within seconds, and `update_design_mapping` can
+then give them another. `upload_techaeon_design_images` now accepts real
+images only (≤10 MB, format sniffed from content, extension must match, SVG
+without active content), all-or-nothing — `INVALID_IMAGE_FILE` /
+`IMAGE_FILE_TOO_LARGE`.
+
 **Events & Guests**
 | Tool | Description |
 |------|-------------|
@@ -120,6 +165,9 @@ All tools call the Aeon Pass gateway at `https://apv2-gatewayapp-prod-westus3.az
 | `update_guest` | Full update of guest details or invitation |
 | `patch_guest` | Partial update — only the fields you pass are changed |
 | `delete_guest` | Soft-delete a guest or remove a single invitation |
+| `create_invitation` | Invite a guest added without one (dev only, 29 Oct) |
+| `update_invitation` | Change passes / design / status on its own (dev only, 29 Oct) |
+| `list_invitation_statuses` | Status ids for `statusId` / `invitationStatusId` (dev only, 29 Oct) |
 | `send_invite` | Send/resend invitations to guests (sets status to SENT) |
 | `send_message_to_guests` | Message guests via InApp/SMS/Email |
 | `list_guest_groups` | List valid guest group IDs for an organization |
@@ -138,14 +186,23 @@ Event writes (dev only, 21 Oct 2026). Easy to get wrong:
 - `notify: true` on update/patch/details notifies **every guest** of the event.
   `callMeta` logs the flag; tool descriptions say to leave it unset.
 - Dates are **local** to `eventTimeZone`, never UTC.
-- **An API-created event has no design mapping** (`designMappingId: null`) and
-  no endpoint sets one. Since 21 Oct (evening) `create_guest`'s `invitation.designMappingId`
-  is optional — left out, the event's design is used, or none — so the tool's
-  `invite: true` issues an invitation on such an event, and that guest then
-  appears in the per-person lists. Adding an invitation to an *existing*
-  guest via `patch_guest` still requires `designMappingId`
-  (`400 DESIGN_MAPPING_ID_REQUIRED`), so on a design-less event that is
-  impossible. Uninvited guests are listed too (since 22 Oct).
+- **An API-created event has no design mapping** (`designMappingId: null`)
+  until `create_design_mapping` gives it one (dev, 29 Oct). `create_guest`'s
+  `invitation.designMappingId` is optional — left out, the event's design is
+  used, or none — so `invite: true` works on a design-less event. An
+  *existing* uninvited guest gets one through `create_invitation` (dev, 29
+  Oct); `patch_guest` still cannot add one without `designMappingId`
+  (`400 DESIGN_MAPPING_ID_REQUIRED`). Uninvited guests are listed too (since
+  22 Oct).
+- **Invitations** (dev, 29 Oct). A guest holds at most one: `create_invitation`
+  on a guest that has one is `400 INVITATION_ALREADY_EXISTS`, and
+  `update_invitation` on a guest without one is a 404. Both need the guest's
+  own `eventId`. `update_invitation` **replaces** `guestPasses`/`isUnlimited`
+  (left out → passes cleared, unlimited false) but keeps `designMappingId` and
+  `statusId` when they are left out; a status change mints a techaeon.
+  Status ids come from `list_invitation_statuses` (master data). `update_guest`'s
+  `invitation.designMappingId` stopped being required the same day, so its
+  tool now sends the invitation whenever `invitationId` is given.
 - **Validation, fixed on dev 21 Oct (evening)** for create, PUT, PATCH and invitee:
   unknown `typeId` → 404 (was 204, and on invitee it corrupted the event);
   negative limits, `endDate` before `startDate`, parent loops (self, child,
@@ -240,7 +297,8 @@ types are the C# wrapper leaking into the schema.
 | `list_contacts` | List/search organization contacts (paginated, custom field filter) |
 | `get_contact` | Get a single contact by ID |
 | `create_contact` | Create a new contact |
-| `update_contact` | Update contact details |
+| `update_contact` | Full replace of standard fields — omitted ones are CLEARED |
+| `set_contact_custom_fields` | Write custom field values only, plain JSON (dev + stage, 29 Oct) |
 | `delete_contact` | Soft-delete a contact |
 | `send_message_to_contacts` | Message contacts via InApp/SMS/Email |
 | `upload_contacts` | Bulk upsert contacts from a list — all-or-nothing |
@@ -254,6 +312,13 @@ object`. `list_contacts` always returns `customFields: null`, and
 `upload_contacts` silently ignores the field. A field just set `ACTIVE` can be
 refused as `CUSTOM_FIELD_VALUE_INVALID` "not a recognized custom field" for a
 few seconds — a cache, not a bad id. All verified on dev 21 Oct 2026.
+
+`set_contact_custom_fields` (`PUT /contact/{Id}/custom-fields`, dev and stage
+29 Oct) is the plain-JSON path for the same values — it touches nothing but
+custom fields, so integrations no longer need multipart or the full-replace
+PUT, which (per its 29 Oct description) **clears every standard field it is not
+sent**. Same keying and merge rules; only the keys sent are validated, so a
+mandatory field left out is not enforced.
 
 **Filtering by custom field** (dev and stage, 23 Oct 2026). `list_guests` and
 `list_contacts` take `customFields` as a *filter*: one JSON-encoded query value,
@@ -482,8 +547,7 @@ environment's own swagger when chasing a specific change.
 
 > **All five `specs/*.json` are gateway snapshots, not published ones.** All were
 > regenerated from the **dev** swagger in Oct 2026 (message on 21 Oct;
-> organization and techaeon on 23 Oct; event and global from stage on 26 Oct,
-> identical to dev that day) — filtered to `/api/portal` and the schemas those paths reach, which is
+> techaeon on 23 Oct; event, organization and global on 29 Oct) — filtered to `/api/portal` and the schemas those paths reach, which is
 > the same shape the publisher serves, with `servers[0].url` rewritten to prod
 > and `example` blocks stripped the way `check:api` stores every other snapshot.
 >
@@ -502,7 +566,12 @@ environment's own swagger when chasing a specific change.
 >   `- event: GONE GET …/list`, `! UNIMPLEMENTED POST …/list` — all the same lag).
 > - **event** (also) — `get_guest`'s `invitation` → `invitations[]`, and the
 >   event write descriptions pointing at `/event/types` (26 Oct).
-> - **global** — `GET /event/types` (26 Oct) and the six event/invitation list operations. Because the
+> - **event** (29 Oct) — design mappings (5), guest invitation create/update,
+>   invitation statuses; `update_guest`'s optional `designMappingId`.
+> - **organization** (29 Oct) — techaeon designs (10) and
+>   `PUT /contact/{Id}/custom-fields`.
+> - **global** — the `{Id}`/`{EntityType}` route-param rename (26 Oct),
+>   `GET /event/types` (26 Oct) and the six event/invitation list operations. Because the
 >   snapshot has them and the publisher does not, `check:api` prints them as
 >   `- global: GONE …`; that is the publisher lagging, not a removal.
 > - **techaeon** — `privileges` on the get/list responses (`PortalTechaeonDto`).
@@ -516,27 +585,26 @@ environment's own swagger when chasing a specific change.
 > `--write` is safe again and the lines go away on their own.
 >
 > `src/api.ts` `BASE_URL` points at the **dev** gateway on this branch. Rollout
-> as of 23 Oct 2026, from each gateway's own swagger (stage also exercised
-> end to end that day). Stage now serves every operation in `COVERED`:
+> as of 29 Oct 2026, from each gateway's own swagger. Prod caught up with
+> stage on 28 Oct (full sweep green):
 >
 > | Change | dev | stage | prod |
 > |---|---|---|---|
 > | Custom fields API, `GET /guest/{id}`, guest `customFields` | ✓ | ✓ | ✓ |
-> | `upload-list` new row fields + all-or-nothing | ✓ | ✓ | — |
-> | API-key identity (`senderType`, per-key read state) | ✓ | ✓ | — |
-> | Contact `customFields` (checked 21 Oct) | ✓ | ✓ | — |
-> | Event/invitation lists by person | ✓ | ✓ | — |
-> | Event create/update/patch/details/invitee/publish | ✓ | ✓ | — |
-> | Guest list POST → GET + `customFields` filter (23 Oct) | ✓ | ✓ | — |
-> | Contact list `customFields` filter (23 Oct) | ✓ | ✓ | — |
-> | Techaeon `privileges` on get/list (23 Oct) | ✓ | ✓ | — |
-> | `GET /event/types`; `get_guest` `invitation` → `invitations[]` (26 Oct) | ✓ | ✓ | — |
+> | `upload-list` new row fields + all-or-nothing | ✓ | ✓ | ✓ |
+> | API-key identity (`senderType`, per-key read state) | ✓ | ✓ | ✓ |
+> | Contact `customFields` (checked 21 Oct) | ✓ | ✓ | ✓ |
+> | Event/invitation lists by person | ✓ | ✓ | ✓ |
+> | Event create/update/patch/details/invitee/publish | ✓ | ✓ | ✓ |
+> | Guest list POST → GET + `customFields` filter (23 Oct) | ✓ | ✓ | ✓ |
+> | Contact list `customFields` filter (23 Oct) | ✓ | ✓ | ✓ |
+> | Techaeon `privileges` on get/list (23 Oct) | ✓ | ✓ | ✓ |
+> | `GET /event/types`; `get_guest` `invitation` → `invitations[]` (26 Oct) | ✓ | ✓ | ✓ |
+> | `PUT /contact/{Id}/custom-fields` (29 Oct) | ✓ | ✓ | ✓ |
+> | Techaeon designs, design mappings, invitation create/update/statuses (29 Oct) | ✓ | — | — |
 >
-> Prod's guest list is still POST-only, so `list_guests` as written will not
-> work there.
->
-> Pointed at prod, the new upload fields would be ignored and the chat tool
-> descriptions would overstate what prod does. Re-check before switching.
+> Pointed at stage or prod, the 18 dev-only tools 404 (prod also lacks
+> `set_contact_custom_fields`). Re-check before switching.
 
 Adding an endpoint: implement in `createClient` (`api.ts`) → register the tool
 (`server.ts`) → add the operation to `COVERED` in `scripts/check-api.mjs`.
